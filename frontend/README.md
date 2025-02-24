@@ -3,7 +3,7 @@ How to run the frontend:
 1. Install dependencies:
 
 ```bash
-npm install
+npm install --legacy-peer-deps
 ```
 
 2. Run the development server:
