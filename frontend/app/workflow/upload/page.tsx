@@ -1,37 +1,102 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState } from "react"
-import { Upload, Rocket } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react";
+import { Upload, Rocket } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { api } from "../../../lib/api";
 
 export default function UploadPage() {
-  const router = useRouter()
-  const [pastedText, setPastedText] = useState("")
-  const [analysis, setAnalysis] = useState("")
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const router = useRouter();
+  const [pastedText, setPastedText] = useState("");
+  const [analysis, setAnalysis] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      // Handle file upload logic here
-      console.log("File uploaded:", file.name)
+  // Initialize chat session on component mount
+  useEffect(() => {
+    // Check if we already have a session ID in localStorage
+    const storedSessionId = localStorage.getItem("chatSessionId");
+
+    if (storedSessionId) {
+      setSessionId(storedSessionId);
+    } else {
+      // Create a new session
+      createNewChatSession();
     }
-  }
+  }, []);
+
+  const createNewChatSession = async () => {
+    try {
+      const newSessionId = await api.createChatSession();
+      setSessionId(newSessionId);
+      localStorage.setItem("chatSessionId", newSessionId);
+    } catch (err) {
+      console.error("Failed to create chat session:", err);
+      setError("Failed to connect to the chat service. Please try again.");
+    }
+  };
+
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Read file content
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const text = e.target?.result as string;
+        setPastedText(text);
+      };
+      reader.readAsText(file);
+    }
+  };
 
   const handleGenerateAnalysis = async () => {
-    setIsAnalyzing(true)
-    // Simulate analysis
-    setTimeout(() => {
-      setAnalysis(
-        "This is an analysis of the uploaded research this is an analysis of the uploaded research " +
-          "this is an analysis of the uploaded research this is an analysis of the uploaded research " +
-          "this is an analysis of the uploaded research this is an analysis of the uploaded research",
-      )
-      setIsAnalyzing(false)
-    }, 1500)
-  }
+    if (!sessionId) {
+      setError("No active session. Please refresh the page.");
+      return;
+    }
+
+    if (!pastedText.trim()) {
+      setError(
+        "Please upload a file or paste text before generating analysis."
+      );
+      return;
+    }
+
+    setError(null);
+    setIsAnalyzing(true);
+
+    try {
+      // Send the transcript to the backend
+      const response = await api.sendMessage(sessionId, pastedText);
+
+      // Get updated chat history to show the analysis
+      const history = await api.getChatHistory(sessionId);
+
+      // Extract assistant response (analysis)
+      const assistantMessages = history.messages.filter(
+        (msg) => msg.role === "assistant"
+      );
+      if (assistantMessages.length > 0) {
+        setAnalysis(assistantMessages[assistantMessages.length - 1].content);
+      }
+
+      // Also store the analysis in localStorage for other pages
+      localStorage.setItem(
+        "interviewAnalysis",
+        JSON.stringify(assistantMessages)
+      );
+    } catch (err) {
+      console.error("Error generating analysis:", err);
+      setError("Failed to generate analysis. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   return (
     <div className="min-h-screen p-6 flex flex-col max-w-6xl mx-auto">
@@ -59,6 +124,12 @@ export default function UploadPage() {
       <div className="space-y-8">
         <h2 className="text-4xl font-bold">Interview Transcript Analysis</h2>
 
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+            {error}
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-8">
           {/* Upload Section */}
           <div className="space-y-2">
@@ -71,7 +142,10 @@ export default function UploadPage() {
                 onChange={handleFileUpload}
                 accept=".pdf,.doc,.docx,.txt"
               />
-              <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center space-y-4">
+              <label
+                htmlFor="file-upload"
+                className="cursor-pointer flex flex-col items-center space-y-4"
+              >
                 <Upload className="w-12 h-12" />
                 <span className="text-xl font-medium">Upload Source</span>
               </label>
@@ -94,7 +168,7 @@ export default function UploadPage() {
         <div className="flex justify-start">
           <button
             onClick={handleGenerateAnalysis}
-            disabled={isAnalyzing}
+            disabled={isAnalyzing || !sessionId}
             className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity disabled:opacity-50"
           >
@@ -121,8 +195,10 @@ export default function UploadPage() {
           </button>
           <button
             onClick={() => router.push("/workflow/problem")}
+            disabled={!analysis}
             className="bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
-                     hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+                     hover:opacity-90 transition-opacity inline-flex items-center gap-2 
+                     disabled:opacity-50"
           >
             Update Problem Statement
             <Rocket className="w-5 h-5" />
@@ -130,6 +206,5 @@ export default function UploadPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
-
