@@ -1,20 +1,20 @@
-"use client"
-import { useRouter } from "next/navigation"
+"use client";
+import { useRouter } from "next/navigation";
 
 export default function WorkflowPage() {
-  const router = useRouter()
+  const router = useRouter();
 
   return (
     <div className="min-h-screen p-6 flex flex-col">
-      {/* Header */}
-      <h1 className="text-4xl md:text-6xl font-bold text-center mb-20">Innovation Workflow</h1>
+      {/* Header
+      <h1 className="text-4xl md:text-6xl font-bold text-center mb-20">Innovation Workflow</h1> */}
 
       {/* Workflow Steps */}
       <div className="flex-1 flex items-center justify-center">
         <div className="max-w-4xl w-full space-y-6">
           {/* Upload Interview */}
           <div className="flex items-center gap-4">
-            <span className="text-xl font-medium w-32">7 pdf upload</span>
+            <span className="text-xl font-medium w-32"></span>
             <div className="flex-1 flex justify-center">
               <button
                 onClick={() => router.push("/workflow/upload")}
@@ -39,7 +39,7 @@ export default function WorkflowPage() {
 
           {/* Generate Ideas */}
           <div className="flex items-center gap-4">
-            <span className="text-xl font-medium w-32"># ideas</span>
+            <span className="text-xl font-medium w-32"></span>
             <div className="flex-1 flex justify-center">
               <button className="w-[60%] bg-[#808080] text-white text-2xl font-medium py-6 rounded-[10px] hover:opacity-90 transition-opacity">
                 Generate Ideas
@@ -61,6 +61,5 @@ export default function WorkflowPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
-
