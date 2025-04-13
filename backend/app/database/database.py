@@ -7,6 +7,11 @@ import motor.motor_asyncio
 from pymongo.errors import ConnectionFailure
 from app.constant.config import MONGODB_CONNECTION_URL
 
+
+client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_CONNECTION_URL)
+db = client.get_database()  # Get the default database
+
+
 class MongoDBSessionManager:
     def __init__(self, connection_url: str):
         """Initialize MongoDB connection manager.
@@ -84,8 +89,13 @@ session_manager = MongoDBSessionManager(MONGODB_CONNECTION_URL)
 
 async def get_db():
     """Get MongoDB client session."""
-    async with session_manager.session() as session:
-        yield session
+    # async with session_manager.session() as session:
+    #     yield session
+    try:
+        yield db  # Yield the database session (Motor client)
+    finally:
+        pass
+
 
 async def run_with_session(
     operation: Callable[[motor.motor_asyncio.AsyncIOMotorClientSession, str, Any], Coroutine],
