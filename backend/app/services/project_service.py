@@ -4,6 +4,8 @@ import tempfile
 import os
 import json
 from datetime import datetime
+from typing import List, Optional
+import uuid
 
 from app.database.query.db_project import (
     create_project,
@@ -142,10 +144,17 @@ class ProjectService:
         try:
             # The response should already be in structured format
             problem_data = response if isinstance(response, dict) else json.loads(response)
+            
+            # Format stage data properly with problem_statements
+            stage_data = {
+                "problem_statements": problem_data["problem_statements"],
+                "custom_problems": []  # Initialize empty custom problems list
+            }
+            
             updated_project = await update_stage_2(
                 db,
                 project_id,
-                problem_data["problem_statements"]
+                stage_data
             )
             return next(stage for stage in updated_project.stages if stage.stage_number == 2)
         except (json.JSONDecodeError, KeyError) as e:
@@ -155,13 +164,20 @@ class ProjectService:
             )
 
     @staticmethod
-    async def process_stage_3(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
+    async def process_stage_3(
+        db: AsyncIOMotorDatabase, 
+        project_id: str,
+        selected_problem_id: Optional[str] = None,
+        custom_problem: Optional[str] = None
+    ) -> Stage:
         """
-        Process stage 3: Generate product ideas based on problem statements.
+        Process stage 3: Generate product ideas based on a single selected or custom problem statement.
         
         Args:
             db: Database session
             project_id: Project ID
+            selected_problem_id: ID of a problem selected from stage 2 (mutually exclusive with custom_problem)
+            custom_problem: New problem statement as string (mutually exclusive with selected_problem_id)
             
         Returns:
             Updated stage 3 data
@@ -180,10 +196,63 @@ class ProjectService:
             raise HTTPException(status_code=400, detail="Stage 2 must be completed first")
             
         analysis = stage_1.data.get("analysis")
-        problem_statements = stage_2.data.get("problem_statements")
+        all_problem_statements = stage_2.data.get("problem_statements", [])
         
-        if not analysis or not problem_statements:
-            raise HTTPException(status_code=400, detail="Missing required data from prior stages")
+        # Validate input parameters
+        if selected_problem_id and custom_problem:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot provide both selected_problem_id and custom_problem"
+            )
+        if not selected_problem_id and not custom_problem:
+            raise HTTPException(
+                status_code=400,
+                detail="Must provide either selected_problem_id or custom_problem"
+            )
+
+        selected_problem = None
+        
+        # Handle selected problem from stage 2
+        if selected_problem_id:
+            selected_problem = next(
+                (p for p in all_problem_statements if p.get("id") == selected_problem_id),
+                None
+            )
+            if not selected_problem:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Problem with ID {selected_problem_id} not found"
+                )
+        
+        # Handle custom problem
+        if custom_problem:
+            if not isinstance(custom_problem, str) or not custom_problem.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Custom problem must be a non-empty string"
+                )
+            
+            # Create new problem statement
+            custom_problem_id = str(uuid.uuid4())
+            selected_problem = {
+                "id": custom_problem_id,
+                "problem": custom_problem,
+                "explanation": custom_problem,  # Use same text for both fields
+                "is_custom": True
+            }
+            
+            # Add to stage 2's custom problems
+            stage_data = {
+                "problem_statements": all_problem_statements,
+                "custom_problems": stage_2.data.get("custom_problems", []) + [selected_problem]
+            }
+            
+            # Update stage 2 with the new custom problem
+            await update_stage_2(
+                db,
+                project_id,
+                stage_data
+            )
             
         # Initialize RAG service and create query engine with stage-specific parser
         await rag_service.initialize()
@@ -202,17 +271,26 @@ class ProjectService:
             ProjectPrompts.STAGE_3_IDEAS,
             context={
                 "analysis": analysis,
-                "problem_statements": problem_statements
+                "problem_statement": selected_problem  # Pass single selected problem
             }
         )
         
         try:
             # The response should already be in structured format
             ideas_data = response if isinstance(response, dict) else json.loads(response)
+            
+            # Add problem reference to all ideas
+            for idea in ideas_data["product_ideas"]:
+                idea["problem_id"] = selected_problem["id"]
+            
+            # Update stage 3 with selected problem and ideas
             updated_project = await update_stage_3(
                 db,
                 project_id,
-                ideas_data["product_ideas"]
+                {
+                    "selected_problem": selected_problem,
+                    "product_ideas": ideas_data["product_ideas"]
+                }
             )
             return next(stage for stage in updated_project.stages if stage.stage_number == 3)
         except (json.JSONDecodeError, KeyError) as e:

@@ -74,19 +74,28 @@ async def generate_problem_statements(
 @router.post("/{project_id}/stages/3/generate", response_model=Stage)
 async def generate_product_ideas(
     project_id: str = Path(..., description="Project ID"),
+    selected_problem_id: Optional[str] = Query(None, description="ID of the selected problem from stage 2"),
+    custom_problem: Optional[str] = Query(None, description="Custom problem statement text"),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> Stage:
     """
-    Stage 3: Generate product ideas based on problem statements.
+    Stage 3: Generate product ideas based on a single selected or custom problem statement.
     
     This endpoint:
     1. Validates that Stages 1 and 2 are completed
-    2. Uses the analysis and problem statements from prior stages
-    3. Generates 3 product ideas with detailed explanations using AI
-    4. Updates the project with the product ideas
+    2. Takes either a selected problem ID from stage 2 or a custom problem statement
+    3. If custom problem provided, adds it to stage 2's custom problems
+    4. Generates product ideas based on the selected/custom problem
     5. Returns the updated Stage 3 data
+    
+    Note: Must provide either selected_problem_id or custom_problem, but not both
     """
-    return await project_service.process_stage_3(db, project_id)
+    return await project_service.process_stage_3(
+        db, 
+        project_id, 
+        selected_problem_id=selected_problem_id,
+        custom_problem=custom_problem
+    )
 
 @router.post("/{project_id}/stages/4/generate", response_model=Stage)
 async def generate_final_document(

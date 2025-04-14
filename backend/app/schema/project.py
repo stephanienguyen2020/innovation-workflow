@@ -1,24 +1,30 @@
 from datetime import datetime
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 from pydantic import BaseModel, Field, ConfigDict
 from bson import ObjectId
 from app.constant.status import StageStatus, ProjectStatus
+import uuid
 
 class ProblemStatement(BaseModel):
     problem: str
     explanation: str
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))  # Required field with default UUID
+    is_custom: bool = False  # To identify if this is a user-provided custom problem
 
 class ProductIdea(BaseModel):
     idea: str
     detailed_explanation: str
+    problem_id: Optional[str] = None  # Reference to the problem this idea addresses
 
 class Stage1Data(BaseModel):
     analysis: Optional[str] = None
 
 class Stage2Data(BaseModel):
     problem_statements: Optional[List[ProblemStatement]] = None
+    custom_problems: Optional[List[ProblemStatement]] = None  # User-provided custom problems
 
 class Stage3Data(BaseModel):
+    selected_problem: Optional[ProblemStatement] = None  # Single selected or custom problem
     product_ideas: Optional[List[ProductIdea]] = None
 
 class Stage4Data(BaseModel):
