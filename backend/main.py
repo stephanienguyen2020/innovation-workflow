@@ -1,11 +1,11 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.constant.config import SECRET_KEY
-from app.routers import conversation, rag, auth
+from app.routers import conversation, rag, auth, project
 from starlette.middleware.sessions import SessionMiddleware
 from app.database.database import session_manager
 from contextlib import asynccontextmanager
-from app.middleware.auth import verify_jwt_token
+from app.middleware.auth import get_current_user
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  
@@ -26,17 +26,19 @@ async def lifespan(app: FastAPI):
     if session_manager.client is not None:
         await session_manager.close()
         
-        
 app = FastAPI(lifespan=lifespan)
+
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'], #  allows requests from any origin 
+    allow_origins=['*'],
     allow_credentials=True,
-    allow_methods=['*'], # allows all HTTP methods
-    allow_headers=['*'], # allows all headers
+    allow_methods=['*'],
+    allow_headers=['*'],
 )
+
+# Add session middleware for managing server-side sessions
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
-#app.add_middleware(APIGatewayMiddleware)
 
 # Add a basic health check endpoint
 @app.get("/health")
@@ -44,19 +46,22 @@ async def health_check():
     """Health check endpoint to verify the API is running."""
     return {"status": "ok", "database": "mongodb"}
 
-# router_list = [
-#     conversation.router,
-#     rag.router,
-#     auth.router,
-# ]
-
-# for router in router_list:
-#     app.include_router(router=router)
-
-
-app.include_router(conversation.router, dependencies=[Depends(verify_jwt_token)])
-app.include_router(rag.router, dependencies=[Depends(verify_jwt_token)])
-#app.include_router(stock.router)
+# Include routers with authentication where needed
 app.include_router(auth.router)
+app.include_router(
+    project.router,
+    prefix="/api",
+    dependencies=[Depends(get_current_user)]
+)
+app.include_router(
+    conversation.router,
+    prefix="/api",
+    dependencies=[Depends(get_current_user)]
+)
+app.include_router(
+    rag.router,
+    prefix="/api",
+    dependencies=[Depends(get_current_user)]
+)
 
     

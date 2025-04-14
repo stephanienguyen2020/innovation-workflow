@@ -1,4 +1,5 @@
 from passlib.context import CryptContext
+from app.constant.config import JWT_SECRET
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from typing import Optional
@@ -21,7 +22,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 # JWT Secret Key and Algorithm
-JWT_SECRET = os.getenv("JWT_SECRET", "your_jwt_secret_key")  # Default fallback to "your_jwt_secret_key"
 JWT_ALGORITHM = "HS256"
 
 # JWT Token creation

@@ -1,22 +1,50 @@
 # app/middleware/auth.py
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
-from typing import Dict
+from typing import Dict, Optional
 
 # Load your JWT secret key from environment variables
-from app.constant.config import JWT_SECRET_KEY
+from app.constant.config import JWT_SECRET
 
-# OAuth2PasswordBearer is used to extract the JWT token from the Authorization header
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token") 
+class CookieOrHeaderToken:
+    def __init__(self, token_url: str = "login"):
+        self.oauth2_scheme = OAuth2PasswordBearer(tokenUrl=token_url, auto_error=False)
 
-# Function to verify JWT token and return the decoded information
-def verify_jwt_token(token: str = Depends(oauth2_scheme)) -> Dict:
+    async def __call__(self, request: Request) -> Optional[str]:
+        # First try to get token from cookie
+        token = request.cookies.get("access_token")
+        print("cookie", token)
+        if not token:
+            # If no cookie, try to get from Authorization header
+            try:
+                token = await self.oauth2_scheme(request)
+            except:
+                token = None
+        print("header", token)
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        print("final", token)
+        return token
+
+# Create token extractor instance
+token_extractor = CookieOrHeaderToken()
+
+async def get_current_user(token: str = Depends(token_extractor)) -> Dict:
+    """
+    Verify JWT token and return user info.
+    Supports both cookie-based and header-based authentication.
+    """
     try:
+        #print("token middleware", token)
         # Decode and validate the token
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
-        return payload  # The payload will contain the user info or the subject ('sub')
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
