@@ -1,9 +1,9 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from fastapi import HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.schema.project import Project, Stage, Stage1Data
+from app.schema.project import Project, Stage, Stage1Data, Stage2Data, Stage3Data, Stage4Data
 from app.constant.status import StageStatus
 
 async def create_project(db: AsyncIOMotorDatabase, user_id: str) -> Project:
@@ -41,6 +41,88 @@ async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: st
             "$set": {
                 "stages": [stage.dict() for stage in project.stages],
                 "document_id": document_id,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return project
+
+async def update_stage_2(db: AsyncIOMotorDatabase, project_id: str, problem_statements: List[Dict[str, str]]) -> Project:
+    """Update stage 2 with problem statements and mark subsequent stages as not started."""
+    project = await get_project(db, project_id)
+    
+    # Update stage 2 data
+    project.stages[1].data = Stage2Data(problem_statements=problem_statements).dict()
+    project.stages[1].status = StageStatus.COMPLETED
+    project.stages[1].updated_at = datetime.utcnow()
+    
+    # Reset subsequent stages
+    for stage in project.stages[2:]:
+        stage.status = StageStatus.NOT_STARTED
+        stage.data = {}
+        stage.updated_at = datetime.utcnow()
+    
+    project.updated_at = datetime.utcnow()
+    
+    # Update project
+    await db.projects.update_one(
+        {"_id": ObjectId(project_id)},
+        {
+            "$set": {
+                "stages": [stage.dict() for stage in project.stages],
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return project
+
+async def update_stage_3(db: AsyncIOMotorDatabase, project_id: str, product_ideas: List[Dict[str, str]]) -> Project:
+    """Update stage 3 with product ideas and mark stage 4 as not started."""
+    project = await get_project(db, project_id)
+    
+    # Update stage 3 data
+    project.stages[2].data = Stage3Data(product_ideas=product_ideas).dict()
+    project.stages[2].status = StageStatus.COMPLETED
+    project.stages[2].updated_at = datetime.utcnow()
+    
+    # Reset stage 4
+    project.stages[3].status = StageStatus.NOT_STARTED
+    project.stages[3].data = {}
+    project.stages[3].updated_at = datetime.utcnow()
+    
+    project.updated_at = datetime.utcnow()
+    
+    # Update project
+    await db.projects.update_one(
+        {"_id": ObjectId(project_id)},
+        {
+            "$set": {
+                "stages": [stage.dict() for stage in project.stages],
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return project
+
+async def update_stage_4(db: AsyncIOMotorDatabase, project_id: str, final_pdf: Dict[str, Any]) -> Project:
+    """Update stage 4 with final PDF data."""
+    project = await get_project(db, project_id)
+    
+    # Update stage 4 data
+    project.stages[3].data = Stage4Data(final_pdf=final_pdf).dict()
+    project.stages[3].status = StageStatus.COMPLETED
+    project.stages[3].updated_at = datetime.utcnow()
+    project.updated_at = datetime.utcnow()
+    
+    # Update project
+    await db.projects.update_one(
+        {"_id": ObjectId(project_id)},
+        {
+            "$set": {
+                "stages": [stage.dict() for stage in project.stages],
                 "updated_at": datetime.utcnow()
             }
         }

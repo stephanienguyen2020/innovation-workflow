@@ -10,6 +10,11 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.readers.docling import DoclingReader
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, ExactMatchFilter
+from llama_index.core.output_parsers import LangchainOutputParser
+from llama_index.llms.openai import OpenAI
+from llama_index.core.prompts.default_prompts import DEFAULT_TEXT_QA_PROMPT_TMPL
+from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 import pymongo
 
 from app.constant.config import MONGODB_CONNECTION_URL, OPENAI_API_KEY
@@ -36,6 +41,21 @@ class RAGService:
             dimensions=self.embedding_dimension
         )
         
+        # Define output schemas for stages
+        self.stage2_schemas = [
+            ResponseSchema(
+                name="problem_statements",
+                description="List of problem statements with explanations"
+            )
+        ]
+        
+        self.stage3_schemas = [
+            ResponseSchema(
+                name="product_ideas",
+                description="List of product ideas with detailed explanations"
+            )
+        ]
+        
         self._index = None
         self.vector_store = None
         self.storage_context = None
@@ -56,6 +76,12 @@ class RAGService:
         )
         # Create storage context
         self.storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
+        
+        # Initialize the index from the vector store if documents exist
+        self._index = VectorStoreIndex.from_vector_store(
+            vector_store=self.vector_store,
+            embed_model=self.embed_model
+        )
 
     @property
     def index(self):
@@ -116,11 +142,61 @@ class RAGService:
         
         return result
 
+    async def create_document_query_engine(
+        self, 
+        document_id: str = None, 
+        similarity_top_k: int = 3,
+        stage_number: int = None
+    ):
+        """
+        Create a query engine for document analysis with optional filters and structured output.
+        
+        Args:
+            document_id: Optional parent document ID to filter by
+            similarity_top_k: Number of similar documents to retrieve
+            stage_number: Stage number to determine output schema
+            
+        Returns:
+            Configured query engine
+        """
+        # Initialize filters if document_id is provided
+        filters = None
+        if document_id:
+            filters = MetadataFilters(filters=[
+                ExactMatchFilter(
+                    key="parent_doc_id", 
+                    value=document_id
+                ),
+            ])
+        
+        # Configure output parser based on stage
+        output_parser = None
+        if stage_number == 2:
+            lc_parser = StructuredOutputParser.from_response_schemas(self.stage2_schemas)
+            output_parser = LangchainOutputParser(lc_parser)
+        elif stage_number == 3:
+            lc_parser = StructuredOutputParser.from_response_schemas(self.stage3_schemas)
+            output_parser = LangchainOutputParser(lc_parser)
+            
+        # Initialize LLM with output parser if needed
+        llm = None
+        if output_parser:
+            llm = OpenAI(
+                api_key=OPENAI_API_KEY,
+                output_parser=output_parser
+            )
+            
+        return self.index.as_query_engine(
+            similarity_top_k=similarity_top_k,
+            filters=filters,
+            llm=llm
+        )
+
     async def ingest_documents_from_directory(
         self, 
         directory_path: str,
         filename: str = None
-    ) -> Tuple[str, List[str]]:
+    ) -> str:
         """
         Ingest documents from a directory into the vector store.
         
@@ -129,7 +205,7 @@ class RAGService:
             filename: Original filename (optional)
             
         Returns:
-            Tuple of (parent_doc_id, list of chunk doc_ids)
+            Parent document ID
         """
         # Generate a parent document ID
         parent_doc_id = str(uuid.uuid4())

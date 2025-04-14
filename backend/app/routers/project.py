@@ -53,3 +53,54 @@ async def upload_and_analyze(
     5. Returns the updated Stage 1 data
     """
     return await project_service.process_stage_1(db, project_id, file)
+
+@router.post("/{project_id}/stages/2/generate", response_model=Stage)
+async def generate_problem_statements(
+    project_id: str = Path(..., description="Project ID"),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+) -> Stage:
+    """
+    Stage 2: Generate problem statements based on analysis.
+    
+    This endpoint:
+    1. Validates that Stage 1 is completed
+    2. Uses the analysis from Stage 1
+    3. Generates 4 problem statements with explanations using AI
+    4. Updates the project with the problem statements
+    5. Returns the updated Stage 2 data
+    """
+    return await project_service.process_stage_2(db, project_id)
+
+@router.post("/{project_id}/stages/3/generate", response_model=Stage)
+async def generate_product_ideas(
+    project_id: str = Path(..., description="Project ID"),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+) -> Stage:
+    """
+    Stage 3: Generate product ideas based on problem statements.
+    
+    This endpoint:
+    1. Validates that Stages 1 and 2 are completed
+    2. Uses the analysis and problem statements from prior stages
+    3. Generates 3 product ideas with detailed explanations using AI
+    4. Updates the project with the product ideas
+    5. Returns the updated Stage 3 data
+    """
+    return await project_service.process_stage_3(db, project_id)
+
+@router.post("/{project_id}/stages/4/generate", response_model=Stage)
+async def generate_final_document(
+    project_id: str = Path(..., description="Project ID"),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+) -> Stage:
+    """
+    Stage 4: Generate final PDF with all analysis and chosen solutions.
+    
+    This endpoint:
+    1. Validates that all prior stages are completed
+    2. Combines data from all prior stages
+    3. Generates a comprehensive final document using AI
+    4. Updates the project with the final document
+    5. Returns the updated Stage 4 data
+    """
+    return await project_service.process_stage_4(db, project_id)
