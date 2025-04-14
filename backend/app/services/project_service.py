@@ -3,6 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 import tempfile
 import os
 from datetime import datetime
+from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, ExactMatchFilter
 
 from app.database.query.db_project import (
     create_project,
@@ -61,13 +62,25 @@ class ProjectService:
                 # Initialize RAG service
                 await rag_service.initialize()
 
-                # Ingest PDF using directory reader
-                doc_count = await rag_service.ingest_documents_from_directory(temp_dir)
-                if doc_count == 0:
-                    raise HTTPException(status_code=400, detail="Failed to process PDF")
-
-                # Create query engine and agent tools
-                query_engine = rag_service.index.as_query_engine(similarity_top_k=3)
+                # Ingest PDF using directory reader and get document IDs
+                parent_doc_id = await rag_service.ingest_documents_from_directory(
+                    temp_dir,
+                    filename=file.filename
+                )
+    
+                filters = MetadataFilters(filters=[
+                    ExactMatchFilter(
+                        key="parent_doc_id", 
+                        value=parent_doc_id
+                    ),
+                ])
+                
+                # Create query engine that only searches within chunks of the uploaded document
+                query_engine = rag_service.index.as_query_engine(
+                    similarity_top_k=3,
+                    filters=filters
+                )
+                
                 tools = [
                     agent_service.create_query_engine_tool(
                         query_engine=query_engine,
@@ -83,8 +96,13 @@ class ProjectService:
                     ProjectPrompts.STAGE_1_ANALYSIS
                 )
 
-                # Update project and get Stage 1 data
-                project = await update_stage_1(db, project_id, analysis, file.filename)
+                # Update project with document IDs and analysis
+                project = await update_stage_1(
+                    db, 
+                    project_id, 
+                    analysis, 
+                    document_id=parent_doc_id  # Store the parent document ID
+                )
                 return project.stages[0]  # Return Stage 1 directly from the updated project
 
             except Exception as e:

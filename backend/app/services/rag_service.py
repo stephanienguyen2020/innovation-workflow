@@ -1,5 +1,7 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from dotenv import load_dotenv
+import uuid
+from datetime import datetime
 
 from llama_index.vector_stores.mongodb import MongoDBAtlasVectorSearch
 from llama_index.core import VectorStoreIndex, StorageContext, Document
@@ -114,18 +116,35 @@ class RAGService:
         
         return result
 
-    async def ingest_documents_from_directory(self, directory_path: str) -> int:
+    async def ingest_documents_from_directory(
+        self, 
+        directory_path: str,
+        filename: str = None
+    ) -> Tuple[str, List[str]]:
         """
         Ingest documents from a directory into the vector store.
         
         Args:
             directory_path: Path to directory containing documents
+            filename: Original filename (optional)
             
         Returns:
-            Number of documents ingested
+            Tuple of (parent_doc_id, list of chunk doc_ids)
         """
+        # Generate a parent document ID
+        parent_doc_id = str(uuid.uuid4())
+        
         # Load documents from directory
         documents = SimpleDirectoryReader(directory_path).load_data()
+        
+        for doc in documents:
+            # Add metadata to track relationship and source
+            doc.metadata.update({
+                "parent_doc_id": parent_doc_id,
+                "original_filename": filename,
+                "ingestion_timestamp": datetime.utcnow().isoformat(),
+                "is_chunk": True
+            })
         
         # Create index from documents
         index = VectorStoreIndex.from_documents(
@@ -137,7 +156,7 @@ class RAGService:
         # Store index for future queries
         self._index = index
         
-        return len(documents)
+        return parent_doc_id
 
     async def ingest_documents_from_docling(self, project_id: str, api_key: str) -> int:
         """

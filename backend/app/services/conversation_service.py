@@ -16,7 +16,6 @@ from app.database.query.db_message import (
     SYSTEM_MESSAGE
 )
 from app.schema.conversation import (
-    ChatRequest,
     MessageConversation,
     ChatMessageHistory,
     AgentResponse

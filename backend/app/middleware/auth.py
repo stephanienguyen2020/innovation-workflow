@@ -15,21 +15,18 @@ class CookieOrHeaderToken:
     async def __call__(self, request: Request) -> Optional[str]:
         # First try to get token from cookie
         token = request.cookies.get("access_token")
-        print("cookie", token)
         if not token:
             # If no cookie, try to get from Authorization header
             try:
                 token = await self.oauth2_scheme(request)
             except:
                 token = None
-        print("header", token)
         if not token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Not authenticated",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        print("final", token)
         return token
 
 # Create token extractor instance
@@ -41,7 +38,6 @@ async def get_current_user(token: str = Depends(token_extractor)) -> Dict:
     Supports both cookie-based and header-based authentication.
     """
     try:
-        #print("token middleware", token)
         # Decode and validate the token
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         return payload
