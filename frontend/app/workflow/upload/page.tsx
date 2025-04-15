@@ -3,7 +3,7 @@
 import type React from "react";
 
 import { useState, useEffect } from "react";
-import { Upload, Rocket } from "lucide-react";
+import { Upload, Rocket, CheckCircle2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getAuthHeaders, createTemporaryAuth } from "@/lib/auth";
 
@@ -33,6 +33,8 @@ export default function UploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [error, setError] = useState("");
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   // For development: Create a temporary user if none exists
@@ -117,6 +119,7 @@ export default function UploadPage() {
 
     setIsUploading(true);
     setError("");
+    setUploadSuccess(false);
 
     try {
       const formData = new FormData();
@@ -150,12 +153,22 @@ export default function UploadPage() {
         setAnalysis(data.data.analysis);
       }
 
+      // Add file to the list
+      setUploadedFiles((prev) => [...prev, file.name]);
+      setUploadSuccess(true);
       console.log("File uploaded successfully");
     } catch (err) {
       console.error("Error uploading file:", err);
       setError("Failed to upload file. Please try again.");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+    if (uploadedFiles.length <= 1) {
+      setUploadSuccess(false);
     }
   };
 
@@ -232,6 +245,13 @@ export default function UploadPage() {
           </div>
         )}
 
+        {uploadSuccess && (
+          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5" />
+            <span>Successfully uploaded files</span>
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-8">
           {/* Upload Section */}
           <div className="space-y-2">
@@ -257,6 +277,30 @@ export default function UploadPage() {
                 </span>
               </label>
             </div>
+
+            {/* File List Display - Moved outside the upload box */}
+            {uploadedFiles.length > 0 && (
+              <div className="mt-4 border rounded-lg p-4">
+                <p className="font-medium mb-2">Uploaded files:</p>
+                <ul className="space-y-2 max-h-[180px] overflow-y-auto">
+                  {uploadedFiles.map((fileName, index) => (
+                    <li
+                      key={index}
+                      className="flex justify-between items-center bg-gray-50 px-3 py-2 rounded text-sm"
+                    >
+                      <span className="truncate max-w-[80%]">{fileName}</span>
+                      <button
+                        onClick={() => removeFile(index)}
+                        className="text-gray-500 hover:text-red-500"
+                        aria-label="Remove file"
+                      >
+                        <X size={16} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* Text Input Section */}
