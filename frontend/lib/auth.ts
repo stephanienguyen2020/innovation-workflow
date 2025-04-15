@@ -1,6 +1,3 @@
-// Basic authentication utility for frontend
-// This is a placeholder for real authentication logic that will be implemented in the backend
-
 export interface User {
   id: string;
   name: string;
@@ -8,41 +5,85 @@ export interface User {
   avatar?: string;
 }
 
-export const login = (email: string, password: string): Promise<User> => {
-  // This would normally make an API call
-  return new Promise((resolve) => {
-    // Simulate network delay
-    setTimeout(() => {
-      // Store in localStorage for persistence
-      const user = { id: "1", name: "Test User", email };
-      localStorage.setItem("user", JSON.stringify(user));
-      resolve(user);
-    }, 500);
+// Login the user
+export const login = async (email: string, password: string): Promise<User> => {
+  const response = await fetch("/auth/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      username: email, // FastAPI OAuth2 form expects 'username'
+      password: password,
+    }),
+    credentials: "include", // Important for cookie handling
   });
+
+  if (!response.ok) {
+    throw new Error("Login failed");
+  }
+
+  const data = await response.json();
+  const user = {
+    id: data.user?.id || "temp-id",
+    name:
+      `${data.user?.first_name || ""} ${data.user?.last_name || ""}`.trim() ||
+      email.split("@")[0],
+    email: email,
+  };
+
+  localStorage.setItem("user", JSON.stringify(user));
+  return user;
 };
 
-export const signup = (
-  name: string,
+// Signup the user
+export const signup = async (
+  firstName: string,
+  lastName: string,
   email: string,
   password: string
 ): Promise<User> => {
-  // This would normally make an API call
-  return new Promise((resolve) => {
-    // Simulate network delay
-    setTimeout(() => {
-      // Store in localStorage for persistence
-      const user = { id: "1", name, email };
-      localStorage.setItem("user", JSON.stringify(user));
-      resolve(user);
-    }, 500);
+  const response = await fetch("/auth/signup", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      password,
+    }),
+    credentials: "include",
   });
+
+  if (!response.ok) {
+    throw new Error("Signup failed");
+  }
+
+  const data = await response.json();
+  const user = {
+    id: data.user?.id || "temp-id",
+    name: `${firstName} ${lastName}`,
+    email: email,
+  };
+
+  localStorage.setItem("user", JSON.stringify(user));
+  return user;
 };
 
-export const logout = (): Promise<void> => {
-  return new Promise((resolve) => {
-    localStorage.removeItem("user");
-    resolve();
+// Logout the user
+export const logout = async (): Promise<void> => {
+  const response = await fetch("/auth/logout", {
+    method: "POST",
+    credentials: "include",
   });
+
+  if (!response.ok) {
+    throw new Error("Logout failed");
+  }
+
+  localStorage.removeItem("user");
 };
 
 export const getCurrentUser = (): User | null => {

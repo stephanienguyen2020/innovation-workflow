@@ -124,7 +124,6 @@ python-dotenv==1.1.0
 python-multipart==0.0.20
 python-pptx==1.0.2
 pytz==2025.2
-pywin32==310
 PyYAML==6.0.2
 referencing==0.36.2
 regex==2024.11.6
@@ -170,3 +169,7 @@ websockets==15.0.1
 wrapt==1.17.2
 XlsxWriter==3.2.2
 yarl==1.18.3
+llama-index
+llama-index-vector-stores-mongodb
+passlib
+llama-index-readers-docling
