@@ -97,16 +97,29 @@ async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: st
         stage.data = {}
         stage.updated_at = datetime.utcnow()
     
-    # Update project
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "stages": [stage.dict() for stage in project.stages],
-                "updated_at": datetime.utcnow()
+    # Update project - Use project_id_str for dev projects
+    if project_id.startswith('dev-project-'):
+        # For dev projects, use the string ID field
+        await db.projects.update_one(
+            {"project_id_str": project_id},
+            {
+                "$set": {
+                    "stages": [stage.dict() for stage in project.stages],
+                    "updated_at": datetime.utcnow()
+                }
             }
-        }
-    )
+        )
+    else:
+        # For regular projects, use ObjectId
+        await db.projects.update_one(
+            {"_id": ObjectId(project_id)},
+            {
+                "$set": {
+                    "stages": [stage.dict() for stage in project.stages],
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
     
     return project
 
@@ -159,16 +172,29 @@ async def update_stage_2(
     
     project.updated_at = datetime.utcnow()
     
-    # Update project
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "stages": [stage.dict() for stage in project.stages],
-                "updated_at": datetime.utcnow()
+    # Update project - Use project_id_str for dev projects
+    if project_id.startswith('dev-project-'):
+        # For dev projects, use the string ID field
+        await db.projects.update_one(
+            {"project_id_str": project_id},
+            {
+                "$set": {
+                    "stages": [stage.dict() for stage in project.stages],
+                    "updated_at": datetime.utcnow()
+                }
             }
-        }
-    )
+        )
+    else:
+        # For regular projects, use ObjectId
+        await db.projects.update_one(
+            {"_id": ObjectId(project_id)},
+            {
+                "$set": {
+                    "stages": [stage.dict() for stage in project.stages],
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
     
     return project
 
@@ -208,16 +234,29 @@ async def update_stage_3(
     
     project.updated_at = datetime.utcnow()
     
-    # Update project
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "stages": [stage.dict() for stage in project.stages],
-                "updated_at": datetime.utcnow()
+    # Update project - Use project_id_str for dev projects
+    if project_id.startswith('dev-project-'):
+        # For dev projects, use the string ID field
+        await db.projects.update_one(
+            {"project_id_str": project_id},
+            {
+                "$set": {
+                    "stages": [stage.dict() for stage in project.stages],
+                    "updated_at": datetime.utcnow()
+                }
             }
-        }
-    )
+        )
+    else:
+        # For regular projects, use ObjectId
+        await db.projects.update_one(
+            {"_id": ObjectId(project_id)},
+            {
+                "$set": {
+                    "stages": [stage.dict() for stage in project.stages],
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
     
     return project
 
@@ -255,16 +294,29 @@ async def update_stage_4(
     project.stages[3].updated_at = datetime.utcnow()
     project.updated_at = datetime.utcnow()
     
-    # Update project
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "stages": [stage.dict() for stage in project.stages],
-                "updated_at": datetime.utcnow()
+    # Update project - Use project_id_str for dev projects
+    if project_id.startswith('dev-project-'):
+        # For dev projects, use the string ID field
+        await db.projects.update_one(
+            {"project_id_str": project_id},
+            {
+                "$set": {
+                    "stages": [stage.dict() for stage in project.stages],
+                    "updated_at": datetime.utcnow()
+                }
             }
-        }
-    )
+        )
+    else:
+        # For regular projects, use ObjectId
+        await db.projects.update_one(
+            {"_id": ObjectId(project_id)},
+            {
+                "$set": {
+                    "stages": [stage.dict() for stage in project.stages],
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
     
     return project
 
@@ -330,12 +382,12 @@ async def get_project_pdf_data(db: AsyncIOMotorDatabase, project_id: str) -> Dic
 
 async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document_id: str) -> Project:
     """
-    Update only the document_id of a project without modifying stage data.
+    Update the document ID for a project.
     
     Args:
         db: Database session
         project_id: Project ID
-        document_id: New document ID from RAG service
+        document_id: Document ID
         
     Returns:
         Updated project
@@ -343,19 +395,13 @@ async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document
     # Get current project
     project = await get_project(db, project_id)
     
-    try:
-        # Try updating with ObjectId
-        await db.projects.update_one(
-            {"_id": ObjectId(project_id)},
-            {
-                "$set": {
-                    "document_id": document_id,
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-    except:
-        # If ObjectId fails, try updating with string ID
+    # Update document ID
+    project.document_id = document_id
+    project.updated_at = datetime.utcnow()
+    
+    # Update project - Use project_id_str for dev projects
+    if project_id.startswith('dev-project-'):
+        # For dev projects, use the string ID field
         await db.projects.update_one(
             {"project_id_str": project_id},
             {
@@ -365,9 +411,16 @@ async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document
                 }
             }
         )
-    
-    # Update the project object in memory
-    project.document_id = document_id
-    project.updated_at = datetime.utcnow()
+    else:
+        # For regular projects, use ObjectId
+        await db.projects.update_one(
+            {"_id": ObjectId(project_id)},
+            {
+                "$set": {
+                    "document_id": document_id,
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
     
     return project

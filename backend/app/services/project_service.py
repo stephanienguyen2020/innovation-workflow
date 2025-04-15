@@ -68,68 +68,18 @@ class ProjectService:
         if not file.filename.endswith('.pdf'):
             raise HTTPException(status_code=400, detail="File must be a PDF")
 
-        # SPECIAL HANDLING FOR DEV PROJECTS
+        # For dev projects, ensure the project exists in our tracking system
         if project_id.startswith('dev-project-'):
             try:
-                print(f"Special handling for dev project {project_id}")
-                # Create a fake project with stages if it doesn't exist
+                print(f"Ensuring dev project {project_id} exists")
+                # Create or get the project record
                 project = await ProjectService.get_or_create_dev_project(db, project_id)
-                
-                # Generate a document ID
-                simple_doc_id = f"pdf-{str(uuid.uuid4())}"
-                print(f"Generated document ID: {simple_doc_id}")
-                
-                # Manually update the project document in MongoDB
-                await db.projects.update_one(
-                    {"project_id_str": project_id},
-                    {
-                        "$set": {
-                            "document_id": simple_doc_id,
-                            "updated_at": datetime.utcnow()
-                        }
-                    }
-                )
-                
-                # Also update the project in memory
-                project.document_id = simple_doc_id
-                project.updated_at = datetime.utcnow()
-                
-                # Return the stage
-                return project.stages[0]
             except Exception as e:
-                print(f"Error in dev project handling: {str(e)}")
+                print(f"Error setting up dev project: {str(e)}")
                 import traceback
                 traceback.print_exc()
-                raise HTTPException(status_code=500, detail=f"Error in dev project handling: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error setting up dev project: {str(e)}")
 
-        # TEMPORARY WORKAROUND: Bypass the LlamaIndex integration
-        # Just store the PDF file and create a simple document ID
-        try:
-            print("Using temporary workaround for PDF upload")
-            # Generate a simple document ID
-            simple_doc_id = f"pdf-{str(uuid.uuid4())}"
-            print(f"Generated simple document ID: {simple_doc_id}")
-            
-            # Store the content in a temporary directory for debugging
-            content = await file.read()
-            
-            # Update document ID and get project
-            print(f"Updating project {project_id} with document ID {simple_doc_id}")
-            project = await update_document_id(db, project_id, simple_doc_id)
-            print("Project updated successfully")
-            
-            # Return stage 1 data
-            return project.stages[0]
-            
-        except Exception as e:
-            print(f"Error in temporary PDF upload workaround: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Error in temporary workaround: {str(e)}")
-        
-        # The below code is the original implementation using LlamaIndex
-        # It's kept here for reference but not executed
-        """
         # Create temporary directory for file processing
         with tempfile.TemporaryDirectory() as temp_dir:
             pdf_path = os.path.join(temp_dir, file.filename)
@@ -180,7 +130,6 @@ class ProjectService:
                 import traceback
                 traceback.print_exc()
                 raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
-        """
 
     @staticmethod
     async def analyze_document(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
@@ -196,110 +145,18 @@ class ProjectService:
         """
         print(f"Analyzing document for project {project_id}")
         
-        # SPECIAL HANDLING FOR DEV PROJECTS
-        if project_id.startswith('dev-project-'):
-            try:
-                print(f"Special handling for dev project analysis {project_id}")
-                # Get or create the project
-                project = await ProjectService.get_or_create_dev_project(db, project_id)
-                
-                if not project.document_id:
-                    raise HTTPException(status_code=400, detail="No document uploaded. Please upload a document first.")
-                
-                # Generate a simple analysis based on the problem domain
-                analysis = f"""
-                Based on the uploaded PDF document and the problem domain of "{project.problem_domain}", 
-                here is a preliminary analysis:
-                
-                ## Document Overview
-                The document appears to be related to {project.problem_domain}. It contains information 
-                that can be used to identify user needs and potential innovation opportunities.
-                
-                ## Key Insights
-                1. Users are looking for solutions that address specific needs in the {project.problem_domain} space.
-                2. Current solutions have gaps that could be filled with innovative approaches.
-                3. There are opportunities to improve efficiency and user experience.
-                4. Technology adoption in this area is growing, indicating a receptive market.
-                
-                ## Recommendations
-                This document provides a good foundation for understanding user needs and market dynamics.
-                The next step would be to identify specific problem statements based on these insights.
-                """
-                
-                # Update project in database
-                await db.projects.update_one(
-                    {"project_id_str": project_id},
-                    {
-                        "$set": {
-                            "stages.0.data": {"analysis": analysis},
-                            "stages.0.status": "completed",
-                            "stages.0.updated_at": datetime.utcnow(),
-                            "updated_at": datetime.utcnow()
-                        }
-                    }
-                )
-                
-                # Update the project in memory
-                project.stages[0].data = {"analysis": analysis}
-                project.stages[0].status = StageStatus.COMPLETED
-                project.stages[0].updated_at = datetime.utcnow()
-                
-                return project.stages[0]
-                
-            except Exception as e:
-                print(f"Error in dev project analysis: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                raise HTTPException(status_code=500, detail=f"Error in dev project analysis: {str(e)}")
-
         # Get project and validate document ID
         project = await get_project(db, project_id)
         if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+            # Special handling for dev projects that might not be in the main collection
+            if project_id.startswith('dev-project-'):
+                project = await ProjectService.get_or_create_dev_project(db, project_id)
+            else:
+                raise HTTPException(status_code=404, detail="Project not found")
             
         if not project.document_id:
             raise HTTPException(status_code=400, detail="No document uploaded. Please upload a document first.")
 
-        # TEMPORARY WORKAROUND: Generate a simple analysis without using LlamaIndex
-        try:
-            print("Using temporary workaround for document analysis")
-            # Generate a simple analysis based on the problem domain
-            analysis = f"""
-            Based on the uploaded PDF document and the problem domain of "{project.problem_domain}", 
-            here is a preliminary analysis:
-            
-            ## Document Overview
-            The document appears to be related to {project.problem_domain}. It contains information 
-            that can be used to identify user needs and potential innovation opportunities.
-            
-            ## Key Insights
-            1. Users are looking for solutions that address specific needs in the {project.problem_domain} space.
-            2. Current solutions have gaps that could be filled with innovative approaches.
-            3. There are opportunities to improve efficiency and user experience.
-            4. Technology adoption in this area is growing, indicating a receptive market.
-            
-            ## Recommendations
-            This document provides a good foundation for understanding user needs and market dynamics.
-            The next step would be to identify specific problem statements based on these insights.
-            """
-            
-            # Update stage 1 with analysis and mark as completed
-            updated_project = await update_stage_1(
-                db, 
-                project_id, 
-                analysis=analysis
-            )
-            return updated_project.stages[0]
-            
-        except Exception as e:
-            print(f"Error in temporary analysis workaround: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Error in temporary analysis workaround: {str(e)}")
-            
-        # The below code is the original implementation using LlamaIndex
-        # It's kept here for reference but not executed
-        """
         try:
             # Initialize RAG service and create query engine
             await rag_service.initialize()
@@ -329,8 +186,10 @@ class ProjectService:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
+            print(f"Error analyzing document: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Error analyzing document: {str(e)}")
-        """
 
     @staticmethod
     async def process_stage_2(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
@@ -346,77 +205,14 @@ class ProjectService:
         """
         print(f"Processing stage 2 for project {project_id}")
         
-        # SPECIAL HANDLING FOR DEV PROJECTS
-        if project_id.startswith('dev-project-'):
-            try:
-                print(f"Special handling for dev project stage 2: {project_id}")
-                # Get or create the project
-                project = await ProjectService.get_or_create_dev_project(db, project_id)
-                
-                # Check if stage 1 is completed
-                if project.stages[0].status != StageStatus.COMPLETED:
-                    raise HTTPException(status_code=400, detail="Stage 1 must be completed first")
-                
-                # Create example problem statements
-                problem_statements = [
-                    {
-                        "id": str(uuid.uuid4()),
-                        "problem": f"Users find it difficult to navigate through {project.problem_domain} solutions",
-                        "explanation": f"Based on the analysis, many users are struggling with the complexity of current {project.problem_domain} interfaces, leading to frustration and inefficiency."
-                    },
-                    {
-                        "id": str(uuid.uuid4()),
-                        "problem": f"Integration challenges with existing {project.problem_domain} systems",
-                        "explanation": "The analysis highlights compatibility issues between different systems, causing workflow disruptions and data silos."
-                    },
-                    {
-                        "id": str(uuid.uuid4()),
-                        "problem": f"Limited mobile access to {project.problem_domain} tools",
-                        "explanation": "Users increasingly need on-the-go access, but current solutions lack robust mobile capabilities."
-                    },
-                    {
-                        "id": str(uuid.uuid4()),
-                        "problem": f"High learning curve for new users in {project.problem_domain}",
-                        "explanation": "New users face significant challenges when adopting existing tools, reducing productivity and increasing onboarding time."
-                    }
-                ]
-                
-                # Update project in database
-                await db.projects.update_one(
-                    {"project_id_str": project_id},
-                    {
-                        "$set": {
-                            "stages.1.data": {
-                                "problem_statements": problem_statements,
-                                "custom_problems": []
-                            },
-                            "stages.1.status": "completed",
-                            "stages.1.updated_at": datetime.utcnow(),
-                            "updated_at": datetime.utcnow()
-                        }
-                    }
-                )
-                
-                # Update the project in memory
-                project.stages[1].data = {
-                    "problem_statements": problem_statements,
-                    "custom_problems": []
-                }
-                project.stages[1].status = StageStatus.COMPLETED
-                project.stages[1].updated_at = datetime.utcnow()
-                
-                return project.stages[1]
-                
-            except Exception as e:
-                print(f"Error in dev project stage 2: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                raise HTTPException(status_code=500, detail=f"Error in dev project stage 2: {str(e)}")
-                
         # Get project and validate stage 1
         project = await get_project(db, project_id)
         if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+            # Special handling for dev projects that might not be in the main collection
+            if project_id.startswith('dev-project-'):
+                project = await ProjectService.get_or_create_dev_project(db, project_id)
+            else:
+                raise HTTPException(status_code=404, detail="Project not found")
             
         stage_1 = next((stage for stage in project.stages if stage.stage_number == 1), None)
         if not stage_1 or stage_1.status != StageStatus.COMPLETED:
@@ -426,56 +222,6 @@ class ProjectService:
         if not analysis:
             raise HTTPException(status_code=400, detail="Stage 1 analysis is missing")
         
-        # TEMPORARY WORKAROUND: Generate problem statements without LlamaIndex
-        try:
-            print("Using temporary workaround for problem statement generation")
-            
-            # Create example problem statements based on the problem domain
-            problem_statements = [
-                {
-                    "id": str(uuid.uuid4()),
-                    "problem": f"Users find it difficult to navigate through {project.problem_domain} solutions",
-                    "explanation": f"Based on the analysis, many users are struggling with the complexity of current {project.problem_domain} interfaces, leading to frustration and inefficiency."
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "problem": f"Integration challenges with existing {project.problem_domain} systems",
-                    "explanation": "The analysis highlights compatibility issues between different systems, causing workflow disruptions and data silos."
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "problem": f"Limited mobile access to {project.problem_domain} tools",
-                    "explanation": "Users increasingly need on-the-go access, but current solutions lack robust mobile capabilities."
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "problem": f"High learning curve for new users in {project.problem_domain}",
-                    "explanation": "New users face significant challenges when adopting existing tools, reducing productivity and increasing onboarding time."
-                }
-            ]
-            
-            # Format stage data
-            stage_data = {
-                "problem_statements": problem_statements,
-                "custom_problems": []  # Initialize empty custom problems list
-            }
-            
-            updated_project = await update_stage_2(
-                db,
-                project_id,
-                stage_data
-            )
-            return next(stage for stage in updated_project.stages if stage.stage_number == 2)
-            
-        except Exception as e:
-            print(f"Error in temporary problem statement generation: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Error generating problem statements: {str(e)}")
-            
-        # The below code is the original implementation using LlamaIndex
-        # It's kept here for reference but not executed
-        """    
         # Initialize RAG service and create query engine with stage-specific parser
         await rag_service.initialize()
         query_engine = await rag_service.create_document_query_engine(
@@ -514,11 +260,13 @@ class ProjectService:
             )
             return next(stage for stage in updated_project.stages if stage.stage_number == 2)
         except (json.JSONDecodeError, KeyError) as e:
+            print(f"Invalid response format from agent: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise HTTPException(
                 status_code=500,
                 detail=f"Invalid response format from agent: {str(e)}"
             )
-        """
 
     @staticmethod
     async def process_stage_3(

@@ -90,7 +90,7 @@ async def upload_document(
         print(f"Upload document endpoint called for project {project_id}")
         print(f"File: {file.filename}, size: {file.size if hasattr(file, 'size') else 'unknown'}")
         
-        # This will be handled by the temporary workaround now
+        # Process the document using LlamaIndex integration
         return await project_service.upload_document(db, project_id, file)
     except Exception as e:
         print(f"Error in upload_document endpoint: {str(e)}")
