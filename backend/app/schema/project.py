@@ -50,9 +50,13 @@ class Stage(BaseModel):
             d['status'] = d['status'].value
         return d
 
+class ProjectCreate(BaseModel):
+    problem_domain: str
+    
 class Project(BaseModel):
     id: ObjectId = Field(alias="_id")
     user_id: ObjectId
+    problem_domain: str
     document_id: Optional[str] = None  # Document ID at project level since it's used across stages
     status: ProjectStatus = Field(default=ProjectStatus.IN_PROGRESS)
     created_at: datetime = Field(default_factory=datetime.utcnow)

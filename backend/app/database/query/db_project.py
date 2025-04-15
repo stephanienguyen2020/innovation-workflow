@@ -6,12 +6,27 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.schema.project import Project, Stage, Stage1Data, Stage2Data, Stage3Data, Stage4Data
 from app.constant.status import StageStatus
 
-async def create_project(db: AsyncIOMotorDatabase, user_id: str) -> Project:
+async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain: str) -> Project:
+    """
+    Create a new project.
+    
+    Args:
+        db: Database session
+        user_id: User ID
+        problem_domain: Domain or area the project will focus on
+        
+    Returns:
+        Newly created project
+    """
     # Create a new ObjectId for the project
     project_id = ObjectId()
     
-    # Create project with required id
-    project = Project(_id=project_id, user_id=ObjectId(user_id))
+    # Create project with required fields
+    project = Project(
+        _id=project_id, 
+        user_id=ObjectId(user_id),
+        problem_domain=problem_domain
+    )
     
     # Insert into database
     await db.projects.insert_one(project.dict(by_alias=True))

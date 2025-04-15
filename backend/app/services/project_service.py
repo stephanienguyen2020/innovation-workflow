@@ -27,9 +27,19 @@ from app.prompts.assistant import ProjectPrompts
 
 class ProjectService:
     @staticmethod
-    async def create_project(db: AsyncIOMotorDatabase, user_id: str) -> Project:
-        """Create a new project."""
-        return await create_project(db, user_id)
+    async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain: str) -> Project:
+        """
+        Create a new project.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            problem_domain: Domain or area the project will focus on
+            
+        Returns:
+            Newly created project
+        """
+        return await create_project(db, user_id, problem_domain)
 
     @staticmethod
     async def get_project(db: AsyncIOMotorDatabase, project_id: str) -> Project:
@@ -113,11 +123,14 @@ class ProjectService:
             # Create tools for the agent
             tools = agent_service.create_document_analysis_tools(query_engine, stage_number=1)
 
-            # Create agent and run analysis
+            # Create agent and run analysis with problem domain context
             agent = agent_service.create_agent(tools)
             analysis = await agent_service.run_analysis(
                 agent,
-                ProjectPrompts.STAGE_1_ANALYSIS
+                ProjectPrompts.STAGE_1_ANALYSIS,
+                context={
+                    "problem_domain": project.problem_domain
+                }
             )
 
             # Update stage 1 with analysis and mark as completed
@@ -173,7 +186,10 @@ class ProjectService:
         response = await agent_service.run_analysis(
             agent,
             ProjectPrompts.STAGE_2_PROBLEMS,
-            context={"analysis": analysis}
+            context={
+                "analysis": analysis,
+                "problem_domain": project.problem_domain
+            }
         )
         
         try:
@@ -306,7 +322,8 @@ class ProjectService:
             ProjectPrompts.STAGE_3_IDEAS,
             context={
                 "analysis": analysis,
-                "problem_statement": selected_problem  # Pass single selected problem
+                "problem_statement": selected_problem,  # Pass single selected problem
+                "problem_domain": project.problem_domain
             }
         )
         

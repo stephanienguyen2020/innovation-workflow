@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Path, Query
+from fastapi import APIRouter, Depends, UploadFile, File, Path, Query, Body
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Optional, Dict
 
 from app.database.database import get_db
-from app.schema.project import Project, Stage
+from app.schema.project import Project, Stage, ProjectCreate
 from app.services.project_service import project_service
 
 router = APIRouter(
@@ -14,11 +14,22 @@ router = APIRouter(
 
 @router.post("/", response_model=Project)
 async def create_project(
+    project_data: ProjectCreate,
     user_id: str = Query(..., description="User ID"),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> Project:
-    """Create a new project."""
-    return await project_service.create_project(db, user_id)
+    """
+    Create a new project.
+    
+    Args:
+        project_data: Project creation data containing problem domain
+        user_id: ID of the user creating the project
+        db: Database connection
+    
+    Returns:
+        Newly created project
+    """
+    return await project_service.create_project(db, user_id, project_data.problem_domain)
 
 @router.get("/{project_id}", response_model=Project)
 async def get_project(

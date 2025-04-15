@@ -4,6 +4,9 @@ class ProjectPrompts:
     and any relevant information that can help in understanding the context 
     of the document. Provide a concise analysis of what the document is about.
     
+    Context from previous stage:
+    Problem Domain: {problem_domain}
+    
     Return your response in a clear, well-structured paragraph.
     """
 
@@ -27,7 +30,8 @@ class ProjectPrompts:
     4. Use professional, clear language
 
     Context from previous stage:
-    {analysis}
+        Problem Domain: {problem_domain}
+        Analysis: {analysis}
 
     Return ONLY valid JSON matching the Pydantic model structure above, in this format:
     {
@@ -42,7 +46,7 @@ class ProjectPrompts:
     """
 
     STAGE_3_IDEAS = """
-    You are an expert product innovator. Using the analysis from Stage 1 and problem statements from Stage 2, 
+    You are an expert product innovator in {problem_domain}. Using the analysis from Stage 1 and problem statements from Stage 2, 
     generate exactly three product ideas that solve the identified problems.
 
     Follow this Pydantic model structure exactly:
@@ -64,6 +68,7 @@ class ProjectPrompts:
     4. Use professional, clear language
 
     Context from previous stages:
+    Problem Domain: {problem_domain}
     Analysis: {analysis}
     Problem Statements: {problem_statements}
 
@@ -81,13 +86,14 @@ class ProjectPrompts:
 
     STAGE_4_FINAL = """
     Based on the data from all prior stages, generate a finalized document that includes 
-    all the key information in a structured format. 
+    all the key information in a structured format, focusing on the {problem_domain} context. 
 
     Return your response in the following format:
     {
         "final_pdf": {
-            "title": "Innovation Workflow Analysis",
+            "title": "{problem_domain} Innovation Analysis",
             "sections": {
+                "domain_context": "Overview of the {problem_domain} context",
                 "analysis_summary": "Comprehensive analysis from Stage 1",
                 "problem_statements": [
                     {
@@ -104,7 +110,7 @@ class ProjectPrompts:
                     // ... all ideas
                 ]
             },
-            "conclusion": "Summary of the entire workflow and next steps"
+            "conclusion": "Summary of the entire workflow and next steps in {problem_domain} context"
         }
     }
 
