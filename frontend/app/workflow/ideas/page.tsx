@@ -58,8 +58,31 @@ export default function IdeationPage() {
   useEffect(() => {
     if (!projectId) {
       console.error("No project ID found");
+      setLoading(false);
       return;
     }
+
+    const isDevelopmentMode = projectId.startsWith("dev-project-");
+
+    if (isDevelopmentMode) {
+      // In development mode, use the currentProblem from localStorage
+      const currentProblem = localStorage.getItem("currentProblem");
+      if (currentProblem) {
+        setProblemStatement(currentProblem);
+      }
+
+      // Set mock research summary in development mode
+      setResearchSummary(
+        "This is a development mode research summary. In production, this would be fetched from the API."
+      );
+
+      // Set to the fallback ideas since we're in development mode
+      setIdeas(fallbackIdeas);
+      setLoading(false);
+      return;
+    }
+
+    // If not in development mode, proceed with API calls
 
     // Fetch stage 1 for analysis (research summary)
     const fetchAnalysis = async () => {
@@ -270,7 +293,7 @@ export default function IdeationPage() {
         </div>
 
         {/* Historical Ideas Section */}
-        <div className="space-y-4">
+        {/* <div className="space-y-4">
           <h3 className="text-2xl font-bold">Historical Ideas</h3>
           <div className="border-b border-gray-200">
             <div
@@ -292,30 +315,36 @@ export default function IdeationPage() {
               </div>
             )}
           </div>
-        </div>
+        </div> */}
 
         {/* Bottom Actions */}
         <div className="flex flex-wrap gap-4 pt-4">
           <button
             onClick={() => {
               if (projectId) {
-                fetch(
-                  `${apiUrl}/api/projects/${projectId}/stages/3/generate${
-                    expandedIdea
-                      ? `?selected_problem_id=${ideas[0].problem_id}`
-                      : ""
-                  }`,
-                  {
-                    method: "POST",
-                    headers: getAuthHeaders(),
-                  }
-                )
-                  .then(() => {
-                    router.refresh();
-                  })
-                  .catch((error) => {
-                    console.error("Error regenerating ideas:", error);
-                  });
+                if (projectId.startsWith("dev-project-")) {
+                  // In development mode, just refresh the page
+                  router.refresh();
+                } else {
+                  // In production mode, call the API
+                  fetch(
+                    `${apiUrl}/api/projects/${projectId}/stages/3/generate${
+                      expandedIdea
+                        ? `?selected_problem_id=${ideas[0].problem_id}`
+                        : ""
+                    }`,
+                    {
+                      method: "POST",
+                      headers: getAuthHeaders(),
+                    }
+                  )
+                    .then(() => {
+                      router.refresh();
+                    })
+                    .catch((error) => {
+                      console.error("Error regenerating ideas:", error);
+                    });
+                }
               }
             }}
             className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
@@ -324,13 +353,33 @@ export default function IdeationPage() {
             Regenerate Idea
           </button>
           <button
-            onClick={() =>
+            onClick={() => {
+              // Get the UUID for the selected idea
+              if (!expandedIdea) {
+                alert("Please select an idea first");
+                return;
+              }
+
+              console.log("Ideas:", ideas);
+              console.log("Selected idea ID:", expandedIdea);
+
+              // Find the selected idea to get its ID
+              const selectedIdea = ideas.find(
+                (idea) => idea.id === expandedIdea
+              );
+              if (!selectedIdea) {
+                alert("Couldn't find the selected idea");
+                return;
+              }
+
+              console.log("Found selected idea:", selectedIdea);
+
               router.push(
                 projectId
-                  ? `/workflow/report?projectId=${projectId}&solutionId=${expandedIdea}`
+                  ? `/workflow/report?projectId=${projectId}&solutionId=${selectedIdea.id}`
                   : "/workflow/report"
-              )
-            }
+              );
+            }}
             className="bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity inline-flex items-center gap-2"
             disabled={!expandedIdea}
