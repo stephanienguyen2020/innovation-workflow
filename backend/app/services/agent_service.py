@@ -86,11 +86,21 @@ class AgentService:
         
         # Set each context key-value pair in the Context object
         if context:
+            print(f"Setting context for analysis: {context}")
             for key, value in context.items():
                 await ctx.set(key, value)
-                
-        response = await agent.run(query, ctx=ctx)
-        return str(response)
+        
+        print(f"Running agent with query: {query[:100]}...")
+        try:
+            response = await agent.run(query, ctx=ctx)
+            print(f"Agent response type: {type(response)}")
+            print(f"Agent response preview: {str(response)[:200]}...")
+            return str(response)
+        except Exception as e:
+            print(f"Error in agent.run: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 # Create singleton instance
 agent_service = AgentService() 

@@ -34,13 +34,21 @@ class ProjectService:
         
         Args:
             db: Database session
-            user_id: User ID
+            user_id: User ID (must be a valid ObjectId)
             problem_domain: Domain or area the project will focus on
             
         Returns:
             Newly created project
         """
-        return await create_project(db, user_id, problem_domain)
+        try:
+            # Verify user_id is a valid ObjectId
+            ObjectId(user_id)
+            return await create_project(db, user_id, problem_domain)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid user_id format. Must be a valid MongoDB ObjectId: {str(e)}"
+            )
 
     @staticmethod
     async def get_project(db: AsyncIOMotorDatabase, project_id: str) -> Project:
@@ -67,18 +75,6 @@ class ProjectService:
         """
         if not file.filename.endswith('.pdf'):
             raise HTTPException(status_code=400, detail="File must be a PDF")
-
-        # For dev projects, ensure the project exists in our tracking system
-        if project_id.startswith('dev-project-'):
-            try:
-                print(f"Ensuring dev project {project_id} exists")
-                # Create or get the project record
-                project = await ProjectService.get_or_create_dev_project(db, project_id)
-            except Exception as e:
-                print(f"Error setting up dev project: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                raise HTTPException(status_code=500, detail=f"Error setting up dev project: {str(e)}")
 
         # Create temporary directory for file processing
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -147,12 +143,6 @@ class ProjectService:
         
         # Get project and validate document ID
         project = await get_project(db, project_id)
-        if not project:
-            # Special handling for dev projects that might not be in the main collection
-            if project_id.startswith('dev-project-'):
-                project = await ProjectService.get_or_create_dev_project(db, project_id)
-            else:
-                raise HTTPException(status_code=404, detail="Project not found")
             
         if not project.document_id:
             raise HTTPException(status_code=400, detail="No document uploaded. Please upload a document first.")
@@ -160,20 +150,47 @@ class ProjectService:
         try:
             # Initialize RAG service and create query engine
             await rag_service.initialize()
-            query_engine = await rag_service.create_document_query_engine(project.document_id)
+            print(f"Creating query engine for document ID: {project.document_id}")
+            
+            # Increase top_k to get more content from the document
+            query_engine = await rag_service.create_document_query_engine(
+                project.document_id,
+                similarity_top_k=5
+            )
             
             # Create tools for the agent
             tools = agent_service.create_document_analysis_tools(query_engine, stage_number=1)
 
-            # Create agent and run analysis with problem domain context
+            # Create agent
             agent = agent_service.create_agent(tools)
+            
+            # Use a more direct prompt that enforces document content extraction
+            direct_prompt = """
+            Extract and analyze the ACTUAL CONTENT of the document. 
+            DO NOT return instructions about how to analyze a document.
+            
+            Provide a detailed summary covering:
+            1. Main topics and themes in the document
+            2. Key findings or arguments presented
+            3. Important data points or evidence
+            4. Conclusions or recommendations
+            
+            Problem Domain: {problem_domain}
+            
+            Your response must be based on the document's content, not meta-instructions.
+            """
+            
+            # Run analysis with problem domain context
+            print("Running document analysis with direct prompt...")
             analysis = await agent_service.run_analysis(
                 agent,
-                ProjectPrompts.STAGE_1_ANALYSIS,
+                direct_prompt,
                 context={
                     "problem_domain": project.problem_domain
                 }
             )
+            
+            print(f"Analysis result preview: {analysis[:200]}...")
 
             # Update stage 1 with analysis and mark as completed
             updated_project = await update_stage_1(
@@ -207,12 +224,6 @@ class ProjectService:
         
         # Get project and validate stage 1
         project = await get_project(db, project_id)
-        if not project:
-            # Special handling for dev projects that might not be in the main collection
-            if project_id.startswith('dev-project-'):
-                project = await ProjectService.get_or_create_dev_project(db, project_id)
-            else:
-                raise HTTPException(status_code=404, detail="Project not found")
             
         stage_1 = next((stage for stage in project.stages if stage.stage_number == 1), None)
         if not stage_1 or stage_1.status != StageStatus.COMPLETED:
@@ -488,82 +499,6 @@ class ProjectService:
                 status_code=400,
                 detail=str(e)
             )
-
-    @staticmethod
-    async def get_or_create_dev_project(db: AsyncIOMotorDatabase, project_id: str) -> Project:
-        """
-        Special helper method to get or create a dev project.
-        Only used for development/testing projects.
-        
-        Args:
-            db: Database session
-            project_id: Project ID string in format 'dev-project-{timestamp}'
-            
-        Returns:
-            Project object
-        """
-        print(f"Looking for dev project with ID: {project_id}")
-        
-        # Check if project exists
-        try:
-            existing = await db.projects.find_one({"project_id_str": project_id})
-            if existing:
-                print("Found existing dev project")
-                return Project(**existing)
-        except Exception as e:
-            print(f"Error finding dev project: {str(e)}")
-        
-        # Create a new project with the string ID
-        print("Creating new dev project")
-        project_data = {
-            "_id": ObjectId(),  # Generate a new ObjectId
-            "project_id_str": project_id,  # Store the string ID
-            "user_id": "dev-user",
-            "problem_domain": "Development Testing",
-            "document_id": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
-            "stages": [
-                {
-                    "stage_number": 1,
-                    "name": "Document Analysis",
-                    "status": "not_started",
-                    "data": {},
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
-                },
-                {
-                    "stage_number": 2,
-                    "name": "Problem Statements",
-                    "status": "not_started",
-                    "data": {},
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
-                },
-                {
-                    "stage_number": 3,
-                    "name": "Product Ideas",
-                    "status": "not_started",
-                    "data": {},
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
-                },
-                {
-                    "stage_number": 4,
-                    "name": "Final Solution",
-                    "status": "not_started",
-                    "data": {},
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
-                }
-            ]
-        }
-        
-        # Insert into database
-        await db.projects.insert_one(project_data)
-        
-        # Return as Project object
-        return Project(**project_data)
 
 # Create singleton instance
 project_service = ProjectService() 

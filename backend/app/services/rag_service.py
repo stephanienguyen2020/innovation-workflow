@@ -241,7 +241,15 @@ class RAGService:
             
             print(f"Loaded {len(documents)} documents")
             
-            for doc in documents:
+            if not documents:
+                print("WARNING: No documents were loaded from the directory.")
+                return parent_doc_id
+            
+            # Print preview of document content to verify loading
+            for i, doc in enumerate(documents):
+                print(f"Document {i+1} preview: {doc.text[:200]}...")
+                print(f"Document {i+1} metadata: {doc.metadata}")
+                
                 # Add metadata to track relationship and source
                 doc.metadata.update({
                     "parent_doc_id": parent_doc_id,
@@ -249,20 +257,23 @@ class RAGService:
                     "ingestion_timestamp": datetime.utcnow().isoformat(),
                     "is_chunk": True
                 })
-                print(f"Document metadata: {doc.metadata}")
             
-            # Create index from documents
-            print("Creating vector index from documents...")
-            index = VectorStoreIndex.from_documents(
+            # Insert documents into the vector store
+            print("Inserting documents into vector store...")
+            self._index = VectorStoreIndex.from_documents(
                 documents,
                 storage_context=self.storage_context,
                 embed_model=self.embed_model
             )
             
-            print("Vector index created successfully")
+            print(f"Successfully indexed {len(documents)} documents with parent ID: {parent_doc_id}")
             
-            # Store index for future queries
-            self._index = index
+            # Test query to verify indexing
+            test_query = "What is this document about?"
+            print(f"Running test query: '{test_query}'")
+            query_engine = self._index.as_query_engine()
+            response = query_engine.query(test_query)
+            print(f"Test query response: {str(response)[:200]}...")
             
             return parent_doc_id
             

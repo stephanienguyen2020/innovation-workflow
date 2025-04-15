@@ -7,27 +7,28 @@ import { getAuthHeaders, createTemporaryAuth } from "@/lib/auth";
 
 interface ProblemStatement {
   id: string;
-  title: string;
-  description: string;
+  problem: string;
+  explanation: string;
+  is_custom?: boolean;
 }
 
 interface StageResponse {
-  problemStatements?: ProblemStatement[];
-  customProblems?: ProblemStatement[];
+  stage_number: number;
+  status: string;
+  data: {
+    problem_statements?: ProblemStatement[];
+    custom_problems?: ProblemStatement[];
+  };
   [key: string]: any;
 }
 
 interface ProjectResponse {
   _id: string;
-  stages: {
-    1: { [key: string]: any };
-    2: {
-      problemStatements?: ProblemStatement[];
-      [key: string]: any;
-    };
-    3: { [key: string]: any };
-    4: { [key: string]: any };
-  };
+  stages: Array<{
+    stage_number: number;
+    status: string;
+    data: any;
+  }>;
   problem_domain: string;
   user_id: string;
   [key: string]: any;
@@ -78,8 +79,18 @@ export default function ProblemDefinitionPage() {
       if (cachedData) {
         try {
           const data = JSON.parse(cachedData);
-          if (data.problemStatements) {
-            setProblemStatements(data.problemStatements);
+          if (data.data && data.data.problem_statements) {
+            setProblemStatements(data.data.problem_statements);
+          } else if (data.problemStatements) {
+            // Handle old cached format
+            setProblemStatements(
+              data.problemStatements.map((p: any) => ({
+                id: p.id,
+                problem: p.title || p.problem,
+                explanation: p.description || p.explanation,
+                is_custom: p.is_custom || false,
+              }))
+            );
           }
         } catch (e) {
           console.error("Error parsing cached data:", e);
@@ -109,12 +120,14 @@ export default function ProblemDefinitionPage() {
       }
 
       const projectData: ProjectResponse = await projectResponse.json();
-      const stage2 = projectData.stages[2];
+      const stage2 = projectData.stages.find(
+        (stage) => stage.stage_number === 2
+      );
 
       if (
         !stage2 ||
-        !stage2.problemStatements ||
-        stage2.problemStatements.length === 0
+        !stage2.data.problem_statements ||
+        stage2.data.problem_statements.length === 0
       ) {
         // Generate problem statements
         await generateProblemStatements(id);
@@ -130,8 +143,8 @@ export default function ProblemDefinitionPage() {
 
         const data: StageResponse = await response.json();
 
-        if (data && data.problemStatements) {
-          setProblemStatements(data.problemStatements);
+        if (data && data.data.problem_statements) {
+          setProblemStatements(data.data.problem_statements);
           // Cache the data
           localStorage.setItem(`project_${id}_stage_2`, JSON.stringify(data));
         }
@@ -160,8 +173,8 @@ export default function ProblemDefinitionPage() {
 
       const data: StageResponse = await response.json();
 
-      if (data && data.problemStatements) {
-        setProblemStatements(data.problemStatements);
+      if (data && data.data.problem_statements) {
+        setProblemStatements(data.data.problem_statements);
         // Cache the data
         localStorage.setItem(`project_${id}_stage_2`, JSON.stringify(data));
       }
@@ -205,6 +218,11 @@ export default function ProblemDefinitionPage() {
         url = `${apiUrl}/api/projects/${projectId}/stages/3/generate?custom_problem=${encodeURIComponent(
           customProblem
         )}`;
+
+        // If explanation is provided, include it
+        if (customExplanation.trim()) {
+          url += `&explanation=${encodeURIComponent(customExplanation)}`;
+        }
       } else {
         // Use selected problem from pre-generated ones
         url = `${apiUrl}/api/projects/${projectId}/stages/3/generate?selected_problem_id=${selectedProblem}`;
@@ -302,7 +320,7 @@ export default function ProblemDefinitionPage() {
                     htmlFor={problem.id}
                     className="text-lg cursor-pointer"
                   >
-                    {problem.title}
+                    {problem.problem}
                   </label>
                 </div>
                 <ChevronDown
@@ -313,7 +331,7 @@ export default function ProblemDefinitionPage() {
               </div>
               {expandedProblem === problem.id && (
                 <div className="pb-4 pl-9">
-                  <p className="text-gray-600">{problem.description}</p>
+                  <p className="text-gray-600">{problem.explanation}</p>
                 </div>
               )}
             </div>
@@ -331,7 +349,7 @@ export default function ProblemDefinitionPage() {
                 className="w-5 h-5"
               />
               <label htmlFor="custom" className="text-lg">
-                Enter you own problem:
+                Enter your own problem:
               </label>
             </div>
             {selectedProblem === "custom" && (
@@ -343,7 +361,7 @@ export default function ProblemDefinitionPage() {
                     setCustomProblem(e.target.value);
                     if (showWarning) setShowWarning(false);
                   }}
-                  placeholder="Enter your own problem statement"
+                  placeholder="Enter your problem statement"
                   className={`w-full p-4 border-2 ${
                     showWarning && !customProblem.trim()
                       ? "border-red-500"
@@ -353,7 +371,7 @@ export default function ProblemDefinitionPage() {
                 <textarea
                   value={customExplanation}
                   onChange={(e) => setCustomExplanation(e.target.value)}
-                  placeholder="Enter detailed explanation of your problem statement"
+                  placeholder="Enter explanation of your problem"
                   className="w-full p-4 border-2 border-gray-700 rounded-lg h-40"
                 />
               </div>

@@ -46,7 +46,7 @@ async def create_project(
     
     Args:
         project_data: Project creation data containing problem domain
-        user_id: ID of the user creating the project
+        user_id: ID of the user creating the project (must be a valid ObjectId)
         db: Database connection
     
     Returns:
