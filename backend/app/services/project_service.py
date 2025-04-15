@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from typing import List, Optional, Dict
 import uuid
+from bson import ObjectId
 
 from app.database.query.db_project import (
     create_project,
@@ -15,7 +16,8 @@ from app.database.query.db_project import (
     update_stage_1,
     update_stage_2,
     update_stage_3,
-    update_stage_4
+    update_stage_4,
+    update_document_id
 )
 from app.schema.project import Project, Stage, Stage1Data
 from app.services.rag_service import rag_service
@@ -40,9 +42,9 @@ class ProjectService:
         return await get_stage(db, project_id, stage_number)
 
     @staticmethod
-    async def process_stage_1(db: AsyncIOMotorDatabase, project_id: str, file: UploadFile) -> Stage:
+    async def upload_document(db: AsyncIOMotorDatabase, project_id: str, file: UploadFile) -> Stage:
         """
-        Process stage 1: Upload PDF and generate analysis.
+        Stage 1 - Part 1: Upload PDF and store document ID.
         
         Args:
             db: Database session
@@ -50,7 +52,7 @@ class ProjectService:
             file: Uploaded PDF file
             
         Returns:
-            Stage 1 data with analysis
+            Stage 1 with document ID
         """
         if not file.filename.endswith('.pdf'):
             raise HTTPException(status_code=400, detail="File must be a PDF")
@@ -74,30 +76,62 @@ class ProjectService:
                     filename=file.filename
                 )
                 
-                # Create query engine for the document
-                query_engine = await rag_service.create_document_query_engine(parent_doc_id)
+                # Update document ID and get project
+                project = await update_document_id(db, project_id, parent_doc_id)
                 
-                # Create tools for the agent
-                tools = agent_service.create_document_analysis_tools(query_engine, stage_number=1)
-
-                # Create agent and run analysis
-                agent = agent_service.create_agent(tools)
-                analysis = await agent_service.run_analysis(
-                    agent,
-                    ProjectPrompts.STAGE_1_ANALYSIS
-                )
-
-                # Update project with document IDs and analysis
-                project = await update_stage_1(
-                    db, 
-                    project_id, 
-                    analysis, 
-                    document_id=parent_doc_id
-                )
+                # Return stage 1 data
                 return project.stages[0]
 
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
+
+    @staticmethod
+    async def analyze_document(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
+        """
+        Stage 1 - Part 2: Generate analysis for the uploaded document.
+        
+        Args:
+            db: Database session
+            project_id: Project ID
+            
+        Returns:
+            Stage 1 with analysis
+        """
+        # Get project and validate document ID
+        project = await get_project(db, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
+        if not project.document_id:
+            raise HTTPException(status_code=400, detail="No document uploaded. Please upload a document first.")
+
+        try:
+            # Initialize RAG service and create query engine
+            await rag_service.initialize()
+            query_engine = await rag_service.create_document_query_engine(project.document_id)
+            
+            # Create tools for the agent
+            tools = agent_service.create_document_analysis_tools(query_engine, stage_number=1)
+
+            # Create agent and run analysis
+            agent = agent_service.create_agent(tools)
+            analysis = await agent_service.run_analysis(
+                agent,
+                ProjectPrompts.STAGE_1_ANALYSIS
+            )
+
+            # Update stage 1 with analysis and mark as completed
+            updated_project = await update_stage_1(
+                db, 
+                project_id, 
+                analysis=analysis
+            )
+            return updated_project.stages[0]
+
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error analyzing document: {str(e)}")
 
     @staticmethod
     async def process_stage_2(db: AsyncIOMotorDatabase, project_id: str) -> Stage:

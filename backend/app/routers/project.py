@@ -38,22 +38,38 @@ async def get_project_stage(
     return await project_service.get_stage(db, project_id, stage_number)
 
 @router.post("/{project_id}/stages/1/upload", response_model=Stage)
-async def upload_and_analyze(
+async def upload_document(
     file: UploadFile = File(...),
     project_id: str = Path(..., description="Project ID"),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> Stage:
     """
-    Stage 1: Upload PDF and generate analysis.
+    Stage 1 - Part 1: Upload PDF document.
     
     This endpoint:
     1. Accepts a PDF file upload
+    2. Processes and stores the PDF content
+    3. Updates the project with the document ID
+    4. Returns the updated Stage 1 data
+    """
+    return await project_service.upload_document(db, project_id, file)
+
+@router.post("/{project_id}/stages/1/generate", response_model=Stage)
+async def analyze_document(
+    project_id: str = Path(..., description="Project ID"),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+) -> Stage:
+    """
+    Stage 1 - Part 2: Generate document analysis.
+    
+    This endpoint:
+    1. Validates that a document has been uploaded
     2. Processes the PDF content
     3. Generates an analysis using AI
-    4. Updates the project with the analysis and document ID
+    4. Updates the project with the analysis
     5. Returns the updated Stage 1 data
     """
-    return await project_service.process_stage_1(db, project_id, file)
+    return await project_service.analyze_document(db, project_id)
 
 @router.post("/{project_id}/stages/2/generate", response_model=Stage)
 async def generate_problem_statements(

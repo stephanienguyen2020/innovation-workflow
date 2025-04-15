@@ -23,16 +23,36 @@ async def get_project(db: AsyncIOMotorDatabase, project_id: str) -> Optional[Pro
         raise HTTPException(status_code=404, detail="Project not found")
     return Project(**project)
 
-async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: str, document_id: str) -> Project:
+async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: str) -> Project:
+    """
+    Update stage 1 with analysis and mark it as completed.
+    
+    Args:
+        db: Database session
+        project_id: Project ID
+        analysis: Analysis text generated from the document
+        
+    Returns:
+        Updated project
+    """
     # Get current project
     project = await get_project(db, project_id)
     
+    # Validate document exists
+    if not project.document_id:
+        raise ValueError("No document found. Please upload a document first.")
+    
     # Update stage 1 data with proper structure
     project.stages[0].data = Stage1Data(analysis=analysis).dict()
-    project.document_id = document_id
     project.stages[0].status = StageStatus.COMPLETED
     project.stages[0].updated_at = datetime.utcnow()
     project.updated_at = datetime.utcnow()
+    
+    # Reset subsequent stages
+    for stage in project.stages[1:]:
+        stage.status = StageStatus.NOT_STARTED
+        stage.data = {}
+        stage.updated_at = datetime.utcnow()
     
     # Update project
     await db.projects.update_one(
@@ -40,7 +60,6 @@ async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: st
         {
             "$set": {
                 "stages": [stage.dict() for stage in project.stages],
-                "document_id": document_id,
                 "updated_at": datetime.utcnow()
             }
         }
@@ -268,3 +287,31 @@ async def get_project_pdf_data(db: AsyncIOMotorDatabase, project_id: str) -> Dic
             "explanation": chosen_solution.get("detailed_explanation", "")
         }
     }
+
+async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document_id: str) -> Project:
+    """
+    Update only the document_id of a project without modifying stage data.
+    
+    Args:
+        db: Database session
+        project_id: Project ID
+        document_id: New document ID from RAG service
+        
+    Returns:
+        Updated project
+    """
+    # Get current project
+    project = await get_project(db, project_id)
+    
+    # Update only document_id and timestamp
+    await db.projects.update_one(
+        {"_id": ObjectId(project_id)},
+        {
+            "$set": {
+                "document_id": document_id,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return project
