@@ -1,41 +1,164 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { ChevronDown, Rocket } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react";
+import { ChevronDown, Rocket } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { getAuthHeaders } from "@/lib/auth";
 
 interface Idea {
-  id: string
-  title: string
-  description: string
+  id: string;
+  idea: string;
+  detailed_explanation: string;
+  problem_id: string;
 }
 
-const generatedIdeas: Idea[] = [
+// This is a fallback in case the API call fails
+const fallbackIdeas: Idea[] = [
   {
     id: "1",
-    title: "idea 1",
-    description: "Detailed explanation of idea 1...",
+    idea: "Phyto-Fix: Phytoplankton Growth Enhancer",
+    detailed_explanation:
+      "Phyto-Fix is a product designed to harness the power of phytoplankton for CO2 fixation...",
+    problem_id: "example-problem-id",
   },
   {
     id: "2",
-    title: "idea 2",
-    description: "Detailed explanation of idea 2...",
+    idea: "Alka-Shift: Ocean Alkalinity Enhancer",
+    detailed_explanation:
+      "Alka-Shift is a product designed to enhance ocean alkalinity...",
+    problem_id: "example-problem-id",
   },
   {
     id: "3",
-    title: "idea 3",
-    description: "Detailed explanation of idea 3...",
+    idea: "Deep-Carbon: Oceanic CO2 Sequestration System",
+    detailed_explanation:
+      "Deep-Carbon is a system designed to facilitate the movement of CO2 to deeper ocean levels...",
+    problem_id: "example-problem-id",
   },
-]
+];
 
 export default function IdeationPage() {
-  const router = useRouter()
-  const [expandedIdea, setExpandedIdea] = useState<string | null>(null)
-  const [isHistoricalExpanded, setIsHistoricalExpanded] = useState(false)
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId =
+    searchParams.get("projectId") || localStorage.getItem("projectId");
+
+  const [expandedIdea, setExpandedIdea] = useState<string | null>(null);
+  const [isHistoricalExpanded, setIsHistoricalExpanded] = useState(false);
+  const [ideas, setIdeas] = useState<Idea[]>(fallbackIdeas);
+  const [problemStatement, setProblemStatement] = useState<string>(
+    "Loading problem statement..."
+  );
+  const [researchSummary, setResearchSummary] = useState<string>(
+    "Loading research summary..."
+  );
+  const [loading, setLoading] = useState<boolean>(true);
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  useEffect(() => {
+    if (!projectId) {
+      console.error("No project ID found");
+      return;
+    }
+
+    // Fetch stage 1 for analysis (research summary)
+    const fetchAnalysis = async () => {
+      try {
+        const response = await fetch(
+          `${apiUrl}/api/projects/${projectId}/stages/1`,
+          {
+            headers: getAuthHeaders(),
+          }
+        );
+
+        if (response.ok) {
+          const stageData = await response.json();
+          if (stageData.data && stageData.data.analysis) {
+            setResearchSummary(stageData.data.analysis);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching analysis:", error);
+      }
+    };
+
+    // Fetch stage 2 for problem statement
+    const fetchProblemStatement = async () => {
+      try {
+        const response = await fetch(
+          `${apiUrl}/api/projects/${projectId}/stages/2`,
+          {
+            headers: getAuthHeaders(),
+          }
+        );
+
+        if (response.ok) {
+          const stageData = await response.json();
+
+          // Look for selected problem in either localStorage or stage 3 data
+          const stage3Response = await fetch(
+            `${apiUrl}/api/projects/${projectId}/stages/3`,
+            {
+              headers: getAuthHeaders(),
+            }
+          );
+
+          if (stage3Response.ok) {
+            const stage3Data = await stage3Response.json();
+
+            if (
+              stage3Data.data &&
+              stage3Data.data.product_ideas &&
+              stage3Data.data.product_ideas.length > 0
+            ) {
+              // Get ideas and set them
+              setIdeas(stage3Data.data.product_ideas);
+
+              // Find the selected problem using the problem_id from the first idea
+              const selectedProblemId =
+                stage3Data.data.product_ideas[0].problem_id;
+
+              if (stageData.data && stageData.data.problem_statements) {
+                const selectedProblem = stageData.data.problem_statements.find(
+                  (p: any) => p.id === selectedProblemId
+                );
+
+                if (selectedProblem) {
+                  setProblemStatement(selectedProblem.problem);
+                } else {
+                  // Check custom problems if not found in main problems
+                  const customProblem = stageData.data.custom_problems?.find(
+                    (p: any) => p.id === selectedProblemId
+                  );
+
+                  if (customProblem) {
+                    setProblemStatement(customProblem.problem);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching problem statement:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnalysis();
+    fetchProblemStatement();
+  }, [projectId, apiUrl]);
 
   const handleIdeaToggle = (id: string) => {
-    setExpandedIdea(expandedIdea === id ? null : id)
-  }
+    setExpandedIdea(expandedIdea === id ? null : id);
+  };
+
+  // Truncate the research summary for display
+  const truncateText = (text: string, maxLength: number = 300) => {
+    if (!text || text.length <= maxLength) return text;
+    return text.slice(0, maxLength) + "...";
+  };
 
   return (
     <div className="min-h-screen p-6 flex flex-col max-w-6xl mx-auto">
@@ -68,13 +191,19 @@ export default function IdeationPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-2xl font-bold">Problem Statement</h3>
             <button
-              onClick={() => router.push("/workflow/problem")}
+              onClick={() =>
+                router.push(
+                  projectId
+                    ? `/workflow/problem?projectId=${projectId}`
+                    : "/workflow/problem"
+                )
+              }
               className="bg-black text-white px-6 py-2 rounded-[10px] text-lg font-medium"
             >
               Modify Problem
             </button>
           </div>
-          <p className="text-gray-600 text-xl">Problem statement from current flow</p>
+          <p className="text-gray-600 text-xl">{problemStatement}</p>
         </div>
 
         {/* Research Summary Section */}
@@ -82,48 +211,62 @@ export default function IdeationPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-2xl font-bold">Research Summary</h3>
             <button
-              onClick={() => router.push("/workflow/upload")}
+              onClick={() =>
+                router.push(
+                  projectId
+                    ? `/workflow/upload?projectId=${projectId}`
+                    : "/workflow/upload"
+                )
+              }
               className="bg-black text-white px-6 py-2 rounded-[10px] text-lg font-medium"
             >
               Modify Research
             </button>
           </div>
-          <p className="text-gray-600 text-xl">summary of key insights from user interview & web research</p>
+          <p className="text-gray-600 text-xl">
+            {truncateText(researchSummary)}
+          </p>
         </div>
 
         {/* Generated Ideas Section */}
         <div className="space-y-4">
           <h3 className="text-2xl font-bold">Generated Ideas</h3>
-          {generatedIdeas.map((idea) => (
-            <div key={idea.id} className="border-b border-gray-200">
-              <div
-                className="flex items-center justify-between py-4 cursor-pointer"
-                onClick={() => handleIdeaToggle(idea.id)}
-              >
-                <div className="flex items-center gap-4">
-                  <input
-                    type="radio"
-                    id={idea.id}
-                    name="idea"
-                    checked={expandedIdea === idea.id}
-                    onChange={() => handleIdeaToggle(idea.id)}
-                    className="w-5 h-5"
+          {loading ? (
+            <p>Loading ideas...</p>
+          ) : (
+            ideas.map((idea) => (
+              <div key={idea.id} className="border-b border-gray-200">
+                <div
+                  className="flex items-center justify-between py-4 cursor-pointer"
+                  onClick={() => handleIdeaToggle(idea.id)}
+                >
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="radio"
+                      id={idea.id}
+                      name="idea"
+                      checked={expandedIdea === idea.id}
+                      onChange={() => handleIdeaToggle(idea.id)}
+                      className="w-5 h-5"
+                    />
+                    <label htmlFor={idea.id} className="text-lg cursor-pointer">
+                      {idea.idea}
+                    </label>
+                  </div>
+                  <ChevronDown
+                    className={`w-6 h-6 transition-transform ${
+                      expandedIdea === idea.id ? "rotate-180" : ""
+                    }`}
                   />
-                  <label htmlFor={idea.id} className="text-lg cursor-pointer">
-                    {idea.title}
-                  </label>
                 </div>
-                <ChevronDown
-                  className={`w-6 h-6 transition-transform ${expandedIdea === idea.id ? "rotate-180" : ""}`}
-                />
+                {expandedIdea === idea.id && (
+                  <div className="pb-4 pl-9">
+                    <p className="text-gray-600">{idea.detailed_explanation}</p>
+                  </div>
+                )}
               </div>
-              {expandedIdea === idea.id && (
-                <div className="pb-4 pl-9">
-                  <p className="text-gray-600">{idea.description}</p>
-                </div>
-              )}
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
         {/* Historical Ideas Section */}
@@ -135,11 +278,17 @@ export default function IdeationPage() {
               onClick={() => setIsHistoricalExpanded(!isHistoricalExpanded)}
             >
               <span className="text-lg">generation 1</span>
-              <ChevronDown className={`w-6 h-6 transition-transform ${isHistoricalExpanded ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`w-6 h-6 transition-transform ${
+                  isHistoricalExpanded ? "rotate-180" : ""
+                }`}
+              />
             </div>
             {isHistoricalExpanded && (
               <div className="pb-4">
-                <p className="text-gray-600">Historical ideas from generation 1...</p>
+                <p className="text-gray-600">
+                  Historical ideas from generation 1...
+                </p>
               </div>
             )}
           </div>
@@ -148,16 +297,43 @@ export default function IdeationPage() {
         {/* Bottom Actions */}
         <div className="flex flex-wrap gap-4 pt-4">
           <button
-            onClick={() => console.log("Regenerate idea")}
+            onClick={() => {
+              if (projectId) {
+                fetch(
+                  `${apiUrl}/api/projects/${projectId}/stages/3/generate${
+                    expandedIdea
+                      ? `?selected_problem_id=${ideas[0].problem_id}`
+                      : ""
+                  }`,
+                  {
+                    method: "POST",
+                    headers: getAuthHeaders(),
+                  }
+                )
+                  .then(() => {
+                    router.refresh();
+                  })
+                  .catch((error) => {
+                    console.error("Error regenerating ideas:", error);
+                  });
+              }
+            }}
             className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity"
           >
             Regenerate Idea
           </button>
           <button
-            onClick={() => router.push("/workflow/report")}
+            onClick={() =>
+              router.push(
+                projectId
+                  ? `/workflow/report?projectId=${projectId}&solutionId=${expandedIdea}`
+                  : "/workflow/report"
+              )
+            }
             className="bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+            disabled={!expandedIdea}
           >
             Generate report
             <Rocket className="w-5 h-5" />
@@ -165,6 +341,5 @@ export default function IdeationPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
-
