@@ -25,8 +25,7 @@ class Stage2Data(BaseModel):
     custom_problems: Optional[List[ProblemStatement]] = None  # User-provided custom problems
 
 class Stage3Data(BaseModel):
-    selected_problem: Optional[ProblemStatement] = None  # Single selected or custom problem
-    product_ideas: Optional[List[ProductIdea]] = None
+    product_ideas: Optional[List[ProductIdea]] = None  # List of generated product ideas
 
 class Stage4Data(BaseModel):
     chosen_solution: Optional[ProductIdea] = None  # The solution chosen by the user

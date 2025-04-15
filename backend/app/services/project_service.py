@@ -284,12 +284,11 @@ class ProjectService:
             for idea in ideas_data["product_ideas"]:
                 idea["problem_id"] = selected_problem["id"]
             
-            # Update stage 3 with selected problem and ideas
+            # Update stage 3 with product ideas
             updated_project = await update_stage_3(
                 db,
                 project_id,
                 {
-                    "selected_problem": selected_problem,
                     "product_ideas": ideas_data["product_ideas"]
                 }
             )

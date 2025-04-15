@@ -116,12 +116,12 @@ async def update_stage_3(
     stage_data: Dict
 ) -> Project:
     """
-    Update stage 3 with selected problem and product ideas.
+    Update stage 3 with product ideas.
     
     Args:
         db: Database session
         project_id: Project ID
-        stage_data: Dictionary containing selected_problem and product_ideas
+        stage_data: Dictionary containing product_ideas
         
     Returns:
         Updated project
@@ -129,14 +129,11 @@ async def update_stage_3(
     project = await get_project(db, project_id)
     
     # Validate stage data
-    if not isinstance(stage_data, dict) or \
-       'selected_problem' not in stage_data or \
-       'product_ideas' not in stage_data:
+    if not isinstance(stage_data, dict) or 'product_ideas' not in stage_data:
         raise ValueError("Invalid stage data format")
 
     # Update stage 3 data with proper structure using Pydantic model
     project.stages[2].data = Stage3Data(
-        selected_problem=stage_data["selected_problem"],
         product_ideas=stage_data["product_ideas"]
     ).dict()
     project.stages[2].status = StageStatus.COMPLETED
