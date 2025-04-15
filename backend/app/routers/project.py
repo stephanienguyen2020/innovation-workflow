@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Path, Query
+from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from typing import Optional
+from typing import Optional, Dict
 
 from app.database.database import get_db
 from app.schema.project import Project, Stage
@@ -97,19 +98,27 @@ async def generate_product_ideas(
         custom_problem=custom_problem
     )
 
-@router.post("/{project_id}/stages/4/generate", response_model=Stage)
+@router.post("/{project_id}/stages/4/generate")
 async def generate_final_document(
     project_id: str = Path(..., description="Project ID"),
+    chosen_solution_id: str = Query(..., description="ID of the solution chosen by the user"),
     db: AsyncIOMotorDatabase = Depends(get_db)
-) -> Stage:
+) -> Dict:
     """
-    Stage 4: Generate final PDF with all analysis and chosen solutions.
+    Stage 4: Update chosen solution and return formatted data.
     
     This endpoint:
     1. Validates that all prior stages are completed
-    2. Combines data from all prior stages
-    3. Generates a comprehensive final document using AI
-    4. Updates the project with the final document
-    5. Returns the updated Stage 4 data
+    2. Updates stage 4 with the chosen solution
+    3. Returns formatted data containing:
+       - Analysis from stage 1
+       - Chosen problem and its explanation
+       - Chosen solution and its explanation
+    
+    The frontend can use this data to generate a PDF or display it in other formats.
     """
-    return await project_service.process_stage_4(db, project_id)
+    return await project_service.process_stage_4(
+        db, 
+        project_id,
+        chosen_solution_id
+    )

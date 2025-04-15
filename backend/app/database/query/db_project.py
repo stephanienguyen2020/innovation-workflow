@@ -126,7 +126,7 @@ async def update_stage_3(
     Returns:
         Updated project
     """
-    project_id_obj = ObjectId(project_id)
+    project = await get_project(db, project_id)
     
     # Validate stage data
     if not isinstance(stage_data, dict) or \
@@ -134,42 +134,67 @@ async def update_stage_3(
        'product_ideas' not in stage_data:
         raise ValueError("Invalid stage data format")
 
-    update_result = await db.projects.update_one(
-        {"_id": project_id_obj},
+    # Update stage 3 data with proper structure using Pydantic model
+    project.stages[2].data = Stage3Data(
+        selected_problem=stage_data["selected_problem"],
+        product_ideas=stage_data["product_ideas"]
+    ).dict()
+    project.stages[2].status = StageStatus.COMPLETED
+    project.stages[2].updated_at = datetime.utcnow()
+    
+    # Reset stage 4
+    project.stages[3].status = StageStatus.NOT_STARTED
+    project.stages[3].data = {}
+    project.stages[3].updated_at = datetime.utcnow()
+    
+    project.updated_at = datetime.utcnow()
+    
+    # Update project
+    await db.projects.update_one(
+        {"_id": ObjectId(project_id)},
         {
             "$set": {
-                # Update stage 3
-                "stages.$[stage3].data.selected_problem": stage_data["selected_problem"],
-                "stages.$[stage3].data.product_ideas": stage_data["product_ideas"],
-                "stages.$[stage3].status": StageStatus.COMPLETED.value,
-                "stages.$[stage3].updated_at": datetime.utcnow(),
-                
-                # Reset stage 4
-                "stages.$[stage4].data": {},
-                "stages.$[stage4].status": StageStatus.NOT_STARTED.value,
-                "stages.$[stage4].updated_at": datetime.utcnow(),
-                
-                # Update project timestamp
+                "stages": [stage.dict() for stage in project.stages],
                 "updated_at": datetime.utcnow()
             }
-        },
-        array_filters=[
-            {"stage3.stage_number": 3},
-            {"stage4.stage_number": 4}
-        ]
+        }
     )
     
-    if update_result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Project not found or stage not updated")
-        
-    return await get_project(db, project_id)
+    return project
 
-async def update_stage_4(db: AsyncIOMotorDatabase, project_id: str, final_pdf: Dict[str, Any]) -> Project:
-    """Update stage 4 with final PDF data."""
+async def update_stage_4(
+    db: AsyncIOMotorDatabase, 
+    project_id: str, 
+    chosen_solution_id: str
+) -> Project:
+    """
+    Update stage 4 with the chosen solution.
+    
+    Args:
+        db: Database session
+        project_id: Project ID
+        chosen_solution_id: ID of the chosen solution from stage 3
+        
+    Returns:
+        Updated project
+    """
     project = await get_project(db, project_id)
     
-    # Update stage 4 data
-    project.stages[3].data = Stage4Data(final_pdf=final_pdf).dict()
+    # Get the chosen solution from stage 3
+    stage_3 = next((stage for stage in project.stages if stage.stage_number == 3), None)
+    if not stage_3 or not stage_3.data.get("product_ideas"):
+        raise ValueError("Stage 3 data missing or incomplete")
+        
+    chosen_solution = next(
+        (idea for idea in stage_3.data["product_ideas"] 
+         if idea.get("id") == chosen_solution_id),
+        None
+    )
+    if not chosen_solution:
+        raise ValueError(f"Solution with ID {chosen_solution_id} not found")
+    
+    # Update stage 4 data with chosen solution
+    project.stages[3].data = Stage4Data(chosen_solution=chosen_solution).dict()
     project.stages[3].status = StageStatus.COMPLETED
     project.stages[3].updated_at = datetime.utcnow()
     project.updated_at = datetime.utcnow()
@@ -198,3 +223,51 @@ async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int
         raise HTTPException(status_code=404, detail=f"Stage {stage_number} not found")
     
     return stage
+
+async def get_project_pdf_data(db: AsyncIOMotorDatabase, project_id: str) -> Dict:
+    """
+    Get project data formatted for PDF generation.
+    
+    Args:
+        db: Database session
+        project_id: Project ID
+        
+    Returns:
+        Dictionary containing formatted project data for PDF
+    """
+    project = await get_project(db, project_id)
+    
+    # Get data from relevant stages
+    stage_1 = next((s for s in project.stages if s.stage_number == 1), None)
+    stage_2 = next((s for s in project.stages if s.stage_number == 2), None)
+    stage_3 = next((s for s in project.stages if s.stage_number == 3), None)
+    stage_4 = next((s for s in project.stages if s.stage_number == 4), None)
+    
+    if not all([stage_1, stage_2, stage_3, stage_4]):
+        raise ValueError("Missing required stage data")
+        
+    if not stage_4.data.get("chosen_solution"):
+        raise ValueError("No chosen solution found in stage 4")
+        
+    chosen_solution = stage_4.data["chosen_solution"]
+    chosen_problem = next(
+        (p for p in stage_2.data.get("problem_statements", []) + stage_2.data.get("custom_problems", [])
+         if p.get("id") == chosen_solution.get("problem_id")),
+        None
+    )
+    
+    if not chosen_problem:
+        raise ValueError("Chosen problem not found")
+    
+    return {
+        "title": "Innovation Workflow Analysis",
+        "analysis": stage_1.data.get("analysis", ""),
+        "chosen_problem": {
+            "statement": chosen_problem.get("problem", ""),
+            "explanation": chosen_problem.get("explanation", "")
+        },
+        "chosen_solution": {
+            "idea": chosen_solution.get("idea", ""),
+            "explanation": chosen_solution.get("detailed_explanation", "")
+        }
+    }

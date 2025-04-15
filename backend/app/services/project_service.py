@@ -4,12 +4,13 @@ import tempfile
 import os
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 import uuid
 
 from app.database.query.db_project import (
     create_project,
     get_project,
+    get_project_pdf_data,
     get_stage,
     update_stage_1,
     update_stage_2,
@@ -300,16 +301,21 @@ class ProjectService:
             )
 
     @staticmethod
-    async def process_stage_4(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
+    async def process_stage_4(
+        db: AsyncIOMotorDatabase, 
+        project_id: str,
+        chosen_solution_id: str
+    ) -> Dict:
         """
-        Process stage 4: Generate final PDF with all analysis and chosen solutions.
+        Process stage 4: Update chosen solution and return formatted data.
         
         Args:
             db: Database session
             project_id: Project ID
+            chosen_solution_id: ID of the solution chosen by the user
             
         Returns:
-            Updated stage 4 data
+            Dictionary containing formatted project data
         """
         # Get project and validate all prior stages
         project = await get_project(db, project_id)
@@ -325,43 +331,58 @@ class ProjectService:
                     detail=f"Stage {stage_num} must be completed first"
                 )
         
-        # Get data from all prior stages
-        stage_1_data = next(s.data for s in project.stages if s.stage_number == 1)
-        stage_2_data = next(s.data for s in project.stages if s.stage_number == 2)
-        stage_3_data = next(s.data for s in project.stages if s.stage_number == 3)
-        
-        # Initialize RAG service and create query engine
-        await rag_service.initialize()
-        query_engine = await rag_service.create_document_query_engine(project.document_id)
-        
-        # Create tools and agent
-        tools = agent_service.create_document_analysis_tools(query_engine, stage_number=4)
-        agent = agent_service.create_agent(tools)
-        
-        # Generate final document
-        response = await agent_service.run_analysis(
-            agent,
-            ProjectPrompts.STAGE_4_FINAL,
-            context={
-                "analysis": stage_1_data.get("analysis"),
-                "problem_statements": stage_2_data.get("problem_statements"),
-                "product_ideas": stage_3_data.get("product_ideas")
-            }
-        )
-        
         try:
-            # Parse the response and update project
-            final_data = json.loads(response)
-            updated_project = await update_stage_4(
-                db,
-                project_id,
-                final_data["final_pdf"]
-            )
-            return next(stage for stage in updated_project.stages if stage.stage_number == 4)
-        except (json.JSONDecodeError, KeyError) as e:
+            # Update stage 4 with chosen solution
+            await update_stage_4(db, project_id, chosen_solution_id)
+            
+            # Get and return formatted data
+            return await get_project_pdf_data(db, project_id)
+            
+        except ValueError as e:
             raise HTTPException(
-                status_code=500,
-                detail=f"Invalid response format from agent: {str(e)}"
+                status_code=400,
+                detail=str(e)
+            )
+            
+    @staticmethod
+    async def get_project_pdf(db: AsyncIOMotorDatabase, project_id: str) -> bytes:
+        """
+        Generate PDF from project data.
+        
+        Args:
+            db: Database session
+            project_id: Project ID
+            
+        Returns:
+            PDF bytes
+        """
+        try:
+            # Get formatted project data
+            pdf_data = await get_project_pdf_data(db, project_id)
+            
+            # TODO: Implement actual PDF generation using a library like ReportLab
+            # For now, return a simple formatted string as bytes
+            pdf_content = f"""
+            {pdf_data['title']}
+            
+            Analysis:
+            {pdf_data['analysis']}
+            
+            Problem:
+            Statement: {pdf_data['chosen_problem']['statement']}
+            Explanation: {pdf_data['chosen_problem']['explanation']}
+            
+            Solution:
+            Idea: {pdf_data['chosen_solution']['idea']}
+            Explanation: {pdf_data['chosen_solution']['explanation']}
+            """
+            
+            return pdf_content.encode('utf-8')
+            
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=str(e)
             )
 
 # Create singleton instance

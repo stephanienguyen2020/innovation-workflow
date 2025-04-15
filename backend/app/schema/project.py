@@ -12,6 +12,7 @@ class ProblemStatement(BaseModel):
     is_custom: bool = False  # To identify if this is a user-provided custom problem
 
 class ProductIdea(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))  # Required field with default UUID
     idea: str
     detailed_explanation: str
     problem_id: Optional[str] = None  # Reference to the problem this idea addresses
@@ -28,7 +29,7 @@ class Stage3Data(BaseModel):
     product_ideas: Optional[List[ProductIdea]] = None
 
 class Stage4Data(BaseModel):
-    final_pdf: Optional[str] = None
+    chosen_solution: Optional[ProductIdea] = None  # The solution chosen by the user
 
 class Stage(BaseModel):
     stage_number: int
