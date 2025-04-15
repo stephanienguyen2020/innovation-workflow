@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Path, Query, Body
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Optional, Dict
+from fastapi import HTTPException
 
 from app.database.database import get_db
 from app.schema.project import Project, Stage, ProjectCreate
@@ -11,6 +12,28 @@ router = APIRouter(
     prefix="/projects",
     tags=["projects"]
 )
+
+@router.get("/test")
+async def test_endpoint():
+    """Test endpoint to verify router and auth are working"""
+    return {"status": "ok", "message": "Project router is working"}
+
+@router.post("/test-upload")
+async def test_upload(file: UploadFile = File(...)):
+    """Test endpoint for file upload only"""
+    try:
+        content = await file.read()
+        return {
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size": len(content),
+            "status": "upload successful"
+        }
+    except Exception as e:
+        print(f"Error in test upload: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Test upload failed: {str(e)}")
 
 @router.post("/", response_model=Project)
 async def create_project(
@@ -63,7 +86,18 @@ async def upload_document(
     3. Updates the project with the document ID
     4. Returns the updated Stage 1 data
     """
-    return await project_service.upload_document(db, project_id, file)
+    try:
+        print(f"Upload document endpoint called for project {project_id}")
+        print(f"File: {file.filename}, size: {file.size if hasattr(file, 'size') else 'unknown'}")
+        
+        # This will be handled by the temporary workaround now
+        return await project_service.upload_document(db, project_id, file)
+    except Exception as e:
+        print(f"Error in upload_document endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Re-raise as HTTP exception with more details
+        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
 
 @router.post("/{project_id}/stages/1/generate", response_model=Stage)
 async def analyze_document(

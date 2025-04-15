@@ -1,37 +1,204 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState } from "react"
-import { Upload, Rocket } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react";
+import { Upload, Rocket } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { getAuthHeaders, createTemporaryAuth } from "@/lib/auth";
+
+// Define interfaces for API responses
+interface ProjectResponse {
+  _id: string;
+  [key: string]: any;
+}
+
+interface StageResponse {
+  stage_number: number;
+  status: string;
+  data: {
+    analysis?: string;
+    [key: string]: any;
+  };
+  created_at: string;
+  updated_at: string;
+  [key: string]: any;
+}
 
 export default function UploadPage() {
-  const router = useRouter()
-  const [pastedText, setPastedText] = useState("")
-  const [analysis, setAnalysis] = useState("")
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const router = useRouter();
+  const [pastedText, setPastedText] = useState("");
+  const [analysis, setAnalysis] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [projectId, setProjectId] = useState("");
+  const [error, setError] = useState("");
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      // Handle file upload logic here
-      console.log("File uploaded:", file.name)
+  // For development: Create a temporary user if none exists
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.log("Creating temporary authentication for development");
+        try {
+          await createTemporaryAuth();
+        } catch (err) {
+          console.error("Failed to create temporary auth", err);
+        }
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    // Get projectId from localStorage or create a new project
+    const storedProjectId = localStorage.getItem("projectId");
+    if (storedProjectId) {
+      setProjectId(storedProjectId);
+    } else {
+      createNewProject();
     }
-  }
+  }, []);
+
+  const createNewProject = async () => {
+    try {
+      // Get the user ID from localStorage (set in createTemporaryAuth)
+      const userId = localStorage.getItem("userId") || "user123";
+      const problem = localStorage.getItem("currentProblem") || "";
+
+      // First try with auth headers
+      let response = await fetch(`${apiUrl}/api/projects/`, {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          problem_domain: problem,
+        }),
+      });
+
+      // If first approach fails, try with user_id as query parameter
+      if (response.status === 401 || response.status === 403) {
+        // Re-create temporary auth
+        await createTemporaryAuth();
+
+        response = await fetch(`${apiUrl}/api/projects/?user_id=${userId}`, {
+          method: "POST",
+          headers: {
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify({
+            problem_domain: problem,
+          }),
+        });
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const data: ProjectResponse = await response.json();
+      const newProjectId = data._id;
+      setProjectId(newProjectId);
+      localStorage.setItem("projectId", newProjectId);
+    } catch (err) {
+      console.error("Error creating project:", err);
+      setError("Failed to create project. Please try again.");
+    }
+  };
+
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file || !projectId) return;
+
+    setIsUploading(true);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // Get the authentication token
+      const token = localStorage.getItem("token");
+      const headers: HeadersInit = {};
+
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      // Call the backend API for stage 1 - document upload
+      const response = await fetch(
+        `${apiUrl}/api/projects/${projectId}/stages/1/upload`,
+        {
+          method: "POST",
+          headers,
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      // Process response
+      const data: StageResponse = await response.json();
+      if (data && data.data.analysis) {
+        setAnalysis(data.data.analysis);
+      }
+
+      console.log("File uploaded successfully");
+    } catch (err) {
+      console.error("Error uploading file:", err);
+      setError("Failed to upload file. Please try again.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleGenerateAnalysis = async () => {
-    setIsAnalyzing(true)
-    // Simulate analysis
-    setTimeout(() => {
-      setAnalysis(
-        "This is an analysis of the uploaded research this is an analysis of the uploaded research " +
-          "this is an analysis of the uploaded research this is an analysis of the uploaded research " +
-          "this is an analysis of the uploaded research this is an analysis of the uploaded research",
-      )
-      setIsAnalyzing(false)
-    }, 1500)
-  }
+    if (!projectId) {
+      setError("Project not initialized. Please refresh the page.");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setError("");
+
+    try {
+      // Call the backend API for stage 1 - generate analysis
+      const response = await fetch(
+        `${apiUrl}/api/projects/${projectId}/stages/1/generate`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      // Display the analysis from the response
+      const data: StageResponse = await response.json();
+      console.log("Response data:", JSON.stringify(data, null, 2));
+      if (data && data.data && data.data.analysis) {
+        console.log("Setting analysis to:", data.data.analysis);
+        setAnalysis(data.data.analysis);
+      } else {
+        console.error("Analysis data not found in response:", data);
+        setError("No analysis was generated. Please try again.");
+      }
+    } catch (err) {
+      console.error("Error generating analysis:", err);
+      setError("Failed to generate analysis. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   return (
     <div className="min-h-screen p-6 flex flex-col max-w-6xl mx-auto">
@@ -59,6 +226,12 @@ export default function UploadPage() {
       <div className="space-y-8">
         <h2 className="text-4xl font-bold">Interview Transcript Analysis</h2>
 
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            {error}
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-8">
           {/* Upload Section */}
           <div className="space-y-2">
@@ -70,10 +243,18 @@ export default function UploadPage() {
                 className="hidden"
                 onChange={handleFileUpload}
                 accept=".pdf,.doc,.docx,.txt"
+                disabled={isUploading}
               />
-              <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center space-y-4">
+              <label
+                htmlFor="file-upload"
+                className={`cursor-pointer flex flex-col items-center space-y-4 ${
+                  isUploading ? "opacity-50" : ""
+                }`}
+              >
                 <Upload className="w-12 h-12" />
-                <span className="text-xl font-medium">Upload Source</span>
+                <span className="text-xl font-medium">
+                  {isUploading ? "Uploading..." : "Upload Source"}
+                </span>
               </label>
             </div>
           </div>
@@ -86,6 +267,7 @@ export default function UploadPage() {
               onChange={(e) => setPastedText(e.target.value)}
               placeholder="paste text here*"
               className="w-full h-[300px] p-4 border rounded-lg resize-none"
+              disabled={isUploading || isAnalyzing}
             />
           </div>
         </div>
@@ -94,7 +276,7 @@ export default function UploadPage() {
         <div className="flex justify-start">
           <button
             onClick={handleGenerateAnalysis}
-            disabled={isAnalyzing}
+            disabled={isAnalyzing || isUploading}
             className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity disabled:opacity-50"
           >
@@ -105,8 +287,10 @@ export default function UploadPage() {
         {/* Analysis Results */}
         {analysis && (
           <div className="space-y-4">
-            <h3 className="text-3xl font-bold">Analyze New Interview:</h3>
-            <p className="text-gray-600 leading-relaxed">{analysis}</p>
+            <h3 className="text-3xl font-bold">Analysis Results:</h3>
+            <div className="text-gray-600 leading-relaxed whitespace-pre-wrap">
+              {analysis}
+            </div>
           </div>
         )}
 
@@ -123,6 +307,7 @@ export default function UploadPage() {
             onClick={() => router.push("/workflow/problem")}
             className="bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+            disabled={!analysis}
           >
             Update Problem Statement
             <Rocket className="w-5 h-5" />
@@ -130,6 +315,5 @@ export default function UploadPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
-

@@ -4,6 +4,7 @@ import jwt
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from typing import Dict, Optional
+from datetime import datetime, timedelta
 
 # Load your JWT secret key from environment variables
 from app.constant.config import JWT_SECRET
@@ -31,6 +32,27 @@ class CookieOrHeaderToken:
 
 # Create token extractor instance
 token_extractor = CookieOrHeaderToken()
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """
+    Create a JWT access token
+    
+    Args:
+        data: The data to encode in the JWT
+        expires_delta: Optional expiration time delta
+        
+    Returns:
+        Encoded JWT token string
+    """
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")
+    return encoded_jwt
 
 async def get_current_user(token: str = Depends(token_extractor)) -> Dict:
     """

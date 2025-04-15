@@ -6,7 +6,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.schema.project import Project, Stage, Stage1Data, Stage2Data, Stage3Data, Stage4Data
 from app.constant.status import StageStatus
 
-async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain: str) -> Project:
+async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain: str, 
+                    project_id_str: Optional[str] = None) -> Project:
     """
     Create a new project.
     
@@ -14,6 +15,7 @@ async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain:
         db: Database session
         user_id: User ID
         problem_domain: Domain or area the project will focus on
+        project_id_str: Optional string ID for dev projects
         
     Returns:
         Newly created project
@@ -21,11 +23,19 @@ async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain:
     # Create a new ObjectId for the project
     project_id = ObjectId()
     
+    # Determine user_id type
+    try:
+        user_id_obj = ObjectId(user_id)
+    except:
+        # If user_id is not a valid ObjectId, use it as a string
+        user_id_obj = user_id
+    
     # Create project with required fields
     project = Project(
         _id=project_id, 
-        user_id=ObjectId(user_id),
-        problem_domain=problem_domain
+        user_id=user_id_obj,
+        problem_domain=problem_domain,
+        project_id_str=project_id_str
     )
     
     # Insert into database
@@ -33,9 +43,27 @@ async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain:
     return project
 
 async def get_project(db: AsyncIOMotorDatabase, project_id: str) -> Optional[Project]:
-    project = await db.projects.find_one({"_id": ObjectId(project_id)})
+    """
+    Get a project by ID, supporting both ObjectId and string IDs.
+    
+    Args:
+        db: Database session
+        project_id: Project ID (can be ObjectId or string format)
+        
+    Returns:
+        Project or raises 404 if not found
+    """
+    # Try to query using ObjectId first (for normal MongoDB IDs)
+    try:
+        project = await db.projects.find_one({"_id": ObjectId(project_id)})
+    except:
+        # If ObjectId conversion fails, try looking up by a string ID field
+        # This supports IDs like "dev-project-1234567890"
+        project = await db.projects.find_one({"project_id_str": project_id})
+    
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
     return Project(**project)
 
 async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: str) -> Project:
@@ -196,36 +224,33 @@ async def update_stage_3(
 async def update_stage_4(
     db: AsyncIOMotorDatabase, 
     project_id: str, 
-    chosen_solution_id: str
+    stage_data: Dict
 ) -> Project:
     """
-    Update stage 4 with the chosen solution.
+    Update stage 4 with solution evaluations.
     
     Args:
         db: Database session
         project_id: Project ID
-        chosen_solution_id: ID of the chosen solution from stage 3
+        stage_data: Dictionary containing evaluations of solutions
         
     Returns:
         Updated project
     """
     project = await get_project(db, project_id)
     
-    # Get the chosen solution from stage 3
-    stage_3 = next((stage for stage in project.stages if stage.stage_number == 3), None)
-    if not stage_3 or not stage_3.data.get("product_ideas"):
-        raise ValueError("Stage 3 data missing or incomplete")
-        
-    chosen_solution = next(
-        (idea for idea in stage_3.data["product_ideas"] 
-         if idea.get("id") == chosen_solution_id),
-        None
-    )
-    if not chosen_solution:
-        raise ValueError(f"Solution with ID {chosen_solution_id} not found")
+    # Validate stage data
+    if not isinstance(stage_data, dict):
+        raise ValueError("Stage data must be a dictionary")
     
-    # Update stage 4 data with chosen solution
-    project.stages[3].data = Stage4Data(chosen_solution=chosen_solution).dict()
+    if "evaluations" not in stage_data:
+        raise ValueError("Stage data must contain 'evaluations'")
+        
+    if not isinstance(stage_data["evaluations"], list):
+        raise ValueError("evaluations must be a list")
+    
+    # Update stage 4 data
+    project.stages[3].data = stage_data
     project.stages[3].status = StageStatus.COMPLETED
     project.stages[3].updated_at = datetime.utcnow()
     project.updated_at = datetime.utcnow()
@@ -318,15 +343,31 @@ async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document
     # Get current project
     project = await get_project(db, project_id)
     
-    # Update only document_id and timestamp
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "document_id": document_id,
-                "updated_at": datetime.utcnow()
+    try:
+        # Try updating with ObjectId
+        await db.projects.update_one(
+            {"_id": ObjectId(project_id)},
+            {
+                "$set": {
+                    "document_id": document_id,
+                    "updated_at": datetime.utcnow()
+                }
             }
-        }
-    )
+        )
+    except:
+        # If ObjectId fails, try updating with string ID
+        await db.projects.update_one(
+            {"project_id_str": project_id},
+            {
+                "$set": {
+                    "document_id": document_id,
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+    
+    # Update the project object in memory
+    project.document_id = document_id
+    project.updated_at = datetime.utcnow()
     
     return project

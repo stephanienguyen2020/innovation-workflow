@@ -55,7 +55,8 @@ class ProjectCreate(BaseModel):
     
 class Project(BaseModel):
     id: ObjectId = Field(alias="_id")
-    user_id: ObjectId
+    user_id: Union[ObjectId, str]  # Allow string user IDs for dev projects
+    project_id_str: Optional[str] = None  # For non-ObjectId string IDs like dev-project-123
     problem_domain: str
     document_id: Optional[str] = None  # Document ID at project level since it's used across stages
     status: ProjectStatus = Field(default=ProjectStatus.IN_PROGRESS)

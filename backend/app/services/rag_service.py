@@ -64,24 +64,43 @@ class RAGService:
         """Async initialization of MongoDB components."""
         if self.vector_store is not None:
             return
-            
-        mongodb_client = pymongo.MongoClient(MONGODB_CONNECTION_URL)
-        # Initialize vector store with minimal configuration
-        self.vector_store = MongoDBAtlasVectorSearch(
-            mongodb_client=mongodb_client,
-            db_name=session_manager.db.name,
-            collection_name=self.collection_name,
-            vector_index_name=self.index_name,
-            index_name=self.index_name
-        )
-        # Create storage context
-        self.storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
         
-        # Initialize the index from the vector store if documents exist
-        self._index = VectorStoreIndex.from_vector_store(
-            vector_store=self.vector_store,
-            embed_model=self.embed_model
-        )
+        try:
+            print("Initializing MongoDB Atlas Vector Search...")
+            mongodb_client = pymongo.MongoClient(MONGODB_CONNECTION_URL)
+            
+            print(f"Connected to MongoDB. Database: {session_manager.db.name}")
+            print(f"Collection: {self.collection_name}, Index: {self.index_name}")
+            
+            # Initialize vector store with minimal configuration
+            self.vector_store = MongoDBAtlasVectorSearch(
+                mongodb_client=mongodb_client,
+                db_name=session_manager.db.name,
+                collection_name=self.collection_name,
+                vector_index_name=self.index_name,
+                index_name=self.index_name
+            )
+            
+            print("Vector store initialized successfully")
+            
+            # Create storage context
+            self.storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
+            
+            print("Storage context created")
+            
+            # Initialize the index from the vector store if documents exist
+            self._index = VectorStoreIndex.from_vector_store(
+                vector_store=self.vector_store,
+                embed_model=self.embed_model
+            )
+            
+            print("Vector index initialized successfully")
+            
+        except Exception as e:
+            print(f"Error initializing MongoDB Atlas Vector Search: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     @property
     def index(self):
@@ -207,32 +226,51 @@ class RAGService:
         Returns:
             Parent document ID
         """
-        # Generate a parent document ID
-        parent_doc_id = str(uuid.uuid4())
-        
-        # Load documents from directory
-        documents = SimpleDirectoryReader(directory_path).load_data()
-        
-        for doc in documents:
-            # Add metadata to track relationship and source
-            doc.metadata.update({
-                "parent_doc_id": parent_doc_id,
-                "original_filename": filename,
-                "ingestion_timestamp": datetime.utcnow().isoformat(),
-                "is_chunk": True
-            })
-        
-        # Create index from documents
-        index = VectorStoreIndex.from_documents(
-            documents,
-            storage_context=self.storage_context,
-            embed_model=self.embed_model
-        )
-        
-        # Store index for future queries
-        self._index = index
-        
-        return parent_doc_id
+        try:
+            print(f"Ingesting documents from directory: {directory_path}")
+            print(f"Filename: {filename}")
+            
+            # Generate a parent document ID
+            parent_doc_id = str(uuid.uuid4())
+            
+            print(f"Generated parent document ID: {parent_doc_id}")
+            
+            # Load documents from directory
+            print("Loading documents with SimpleDirectoryReader...")
+            documents = SimpleDirectoryReader(directory_path).load_data()
+            
+            print(f"Loaded {len(documents)} documents")
+            
+            for doc in documents:
+                # Add metadata to track relationship and source
+                doc.metadata.update({
+                    "parent_doc_id": parent_doc_id,
+                    "original_filename": filename,
+                    "ingestion_timestamp": datetime.utcnow().isoformat(),
+                    "is_chunk": True
+                })
+                print(f"Document metadata: {doc.metadata}")
+            
+            # Create index from documents
+            print("Creating vector index from documents...")
+            index = VectorStoreIndex.from_documents(
+                documents,
+                storage_context=self.storage_context,
+                embed_model=self.embed_model
+            )
+            
+            print("Vector index created successfully")
+            
+            # Store index for future queries
+            self._index = index
+            
+            return parent_doc_id
+            
+        except Exception as e:
+            print(f"Error ingesting documents: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     async def ingest_documents_from_docling(self, project_id: str, api_key: str) -> int:
         """
