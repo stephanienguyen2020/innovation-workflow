@@ -30,23 +30,102 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Create a key for localStorage
+const USER_STORAGE_KEY = "innovation_workflow_user";
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Function to retrieve user from localStorage
+  const getUserFromStorage = () => {
+    try {
+      if (typeof window !== "undefined") {
+        const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+        if (storedUser) {
+          return JSON.parse(storedUser);
+        }
+      }
+    } catch (error) {
+      console.error("Error retrieving user from storage:", error);
+    }
+    return null;
+  };
+
+  // Function to save user to localStorage
+  const saveUserToStorage = (userData: User) => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
+      }
+    } catch (error) {
+      console.error("Error saving user to storage:", error);
+    }
+  };
+
+  // Function to clear user from localStorage
+  const clearUserFromStorage = () => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(USER_STORAGE_KEY);
+      }
+    } catch (error) {
+      console.error("Error clearing user from storage:", error);
+    }
+  };
 
   useEffect(() => {
     // Check if user is logged in on initial load
     const checkUserLoggedIn = async () => {
       try {
+        // Always try to get user from localStorage first
+        const storedUser = getUserFromStorage();
+        if (storedUser) {
+          console.log("Found user in localStorage:", storedUser);
+          setUser(storedUser);
+        }
+
+        // Always validate with server regardless of localStorage
         const response = await fetch("/api/auth/me");
+
         if (response.ok) {
           const userData = await response.json();
           if (userData && Object.keys(userData).length > 0) {
+            console.log("Got valid user data from server:", userData);
             setUser(userData);
+            saveUserToStorage(userData);
+          } else if (storedUser) {
+            // If server returns empty but we have stored user, keep using stored user
+            console.log("Server returned empty user data, keeping stored user");
+          } else {
+            // No stored user and server returned empty
+            console.log("No user data available");
+            setUser(null);
+            clearUserFromStorage();
+          }
+        } else {
+          // Server returned error
+          console.warn("Server session validation failed:", response.status);
+          if (storedUser) {
+            // Keep the stored user temporarily to prevent immediate logout
+            // The user experience is better if we show them as logged in
+            // and then handle auth failures when they try to perform actions
+            console.log(
+              "Keeping stored user despite server validation failure"
+            );
+          } else {
+            setUser(null);
+            clearUserFromStorage();
           }
         }
       } catch (error) {
         console.error("Authentication check failed:", error);
+        // On error, keep existing user if available
+        const storedUser = getUserFromStorage();
+        if (storedUser && !user) {
+          console.log("Using stored user after server error");
+          setUser(storedUser);
+        }
       } finally {
         setLoading(false);
       }
@@ -73,8 +152,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const userData = await response.json();
+      console.log("Login successful, user data:", userData);
+
       // Set the user state
       setUser(userData);
+
+      // Store user data in localStorage for persistence
+      saveUserToStorage(userData);
+
       // Return the user data in case it's needed
       return userData;
     } catch (error) {
@@ -136,9 +221,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await fetch("/api/auth/logout", {
         method: "POST",
       });
+
+      // Clear user state and localStorage
       setUser(null);
+      clearUserFromStorage();
     } catch (error) {
       console.error("Logout error:", error);
+      // Even if the logout API fails, clear the local user state
+      setUser(null);
+      clearUserFromStorage();
     } finally {
       setLoading(false);
     }

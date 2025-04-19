@@ -50,14 +50,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Set cookie with access token
-    const responseObj = NextResponse.json({
-      id: data.user_id,
-      email: username,
-      name: data.name || username.split("@")[0],
+    // Extract user data from the response
+    // The backend response structure is:
+    // { "access_token": "...", "user": { "userId": "...", "username": "...", "priviledge": "..." } }
+
+    // Format user data for the frontend
+    const userData = {
+      id: data.user?.userId || "", // Use the userId from the user object
+      email: data.user?.username || username,
+      name: data.user?.username?.split("@")[0] || username.split("@")[0],
       access_token: data.access_token,
-      token_type: data.token_type,
-    });
+      token_type: data.token_type || "bearer",
+    };
+
+    console.log(
+      "Transformed user data for frontend:",
+      JSON.stringify(userData)
+    );
+
+    // Set cookie with access token
+    const responseObj = NextResponse.json(userData);
 
     responseObj.cookies.set({
       name: "access_token",

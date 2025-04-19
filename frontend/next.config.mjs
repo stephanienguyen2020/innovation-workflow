@@ -36,9 +36,10 @@ const nextConfig = {
         source: "/auth/logout",
         destination: "http://127.0.0.1:8000/logout",
       },
-      // API routes
+      // Backend API routes - change this to be more specific
+      // Don't rewrite the frontend API routes like /api/projects
       {
-        source: "/api/:path*",
+        source: "/api/backend/:path*",
         destination: "http://127.0.0.1:8000/api/:path*",
       },
     ];
