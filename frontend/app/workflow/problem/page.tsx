@@ -1,13 +1,13 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { ChevronDown, Rocket } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useState } from "react";
+import { ChevronDown, Rocket } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface ProblemStatement {
-  id: string
-  title: string
-  description: string
+  id: string;
+  title: string;
+  description: string;
 }
 
 const problemStatements: ProblemStatement[] = [
@@ -31,31 +31,34 @@ const problemStatements: ProblemStatement[] = [
     title: "Problem Statement 4",
     description: "Detailed explanation of problem statement 4...",
   },
-]
+];
 
 export default function ProblemDefinitionPage() {
-  const router = useRouter()
-  const [selectedProblem, setSelectedProblem] = useState<string>("")
-  const [expandedProblem, setExpandedProblem] = useState<string | null>(null)
-  const [customProblem, setCustomProblem] = useState("")
-  const [customExplanation, setCustomExplanation] = useState("")
-  const [showWarning, setShowWarning] = useState(false)
+  const router = useRouter();
+  const [selectedProblem, setSelectedProblem] = useState<string>("");
+  const [expandedProblem, setExpandedProblem] = useState<string | null>(null);
+  const [customProblem, setCustomProblem] = useState("");
+  const [customExplanation, setCustomExplanation] = useState("");
+  const [showWarning, setShowWarning] = useState(false);
 
   const handleProblemSelect = (id: string) => {
-    setSelectedProblem(id)
-    setExpandedProblem(expandedProblem === id ? null : id)
+    setSelectedProblem(id);
+    setExpandedProblem(expandedProblem === id ? null : id);
     if (showWarning) {
-      setShowWarning(false)
+      setShowWarning(false);
     }
-  }
+  };
 
   const handleGenerateIdeas = () => {
-    if (!selectedProblem || (selectedProblem === "custom" && !customProblem.trim())) {
-      setShowWarning(true)
-      return
+    if (
+      !selectedProblem ||
+      (selectedProblem === "custom" && !customProblem.trim())
+    ) {
+      setShowWarning(true);
+      return;
     }
-    router.push("/workflow/ideas")
-  }
+    router.push("/workflow/ideas");
+  };
 
   return (
     <div className="min-h-screen p-6 flex flex-col max-w-6xl mx-auto">
@@ -82,7 +85,9 @@ export default function ProblemDefinitionPage() {
       {/* Main Content */}
       <div className="space-y-8">
         <h2 className="text-4xl font-bold">Problem Definition</h2>
-        <p className="text-2xl">select from the following problem statement or enter your own</p>
+        <p className="text-2xl">
+          select from the following problem statement or enter your own
+        </p>
 
         {/* Problem Statements */}
         <div className="space-y-4">
@@ -101,12 +106,17 @@ export default function ProblemDefinitionPage() {
                     onChange={() => handleProblemSelect(problem.id)}
                     className="w-5 h-5"
                   />
-                  <label htmlFor={problem.id} className="text-lg cursor-pointer">
+                  <label
+                    htmlFor={problem.id}
+                    className="text-lg cursor-pointer"
+                  >
                     {problem.title}
                   </label>
                 </div>
                 <ChevronDown
-                  className={`w-6 h-6 transition-transform ${expandedProblem === problem.id ? "rotate-180" : ""}`}
+                  className={`w-6 h-6 transition-transform ${
+                    expandedProblem === problem.id ? "rotate-180" : ""
+                  }`}
                 />
               </div>
               {expandedProblem === problem.id && (
@@ -138,12 +148,14 @@ export default function ProblemDefinitionPage() {
                   type="text"
                   value={customProblem}
                   onChange={(e) => {
-                    setCustomProblem(e.target.value)
-                    if (showWarning) setShowWarning(false)
+                    setCustomProblem(e.target.value);
+                    if (showWarning) setShowWarning(false);
                   }}
                   placeholder="Enter your own problem statement"
                   className={`w-full p-4 border-2 ${
-                    showWarning && !customProblem.trim() ? "border-red-500" : "border-gray-700"
+                    showWarning && !customProblem.trim()
+                      ? "border-red-500"
+                      : "border-gray-700"
                   } rounded-lg`}
                 />
                 <textarea
@@ -186,6 +198,5 @@ export default function ProblemDefinitionPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
-

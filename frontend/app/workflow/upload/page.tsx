@@ -77,11 +77,13 @@ export default function UploadPage() {
 
     // Get access token from local storage
     let accessToken = "";
+    let tokenType = "bearer";
     try {
       const userData = localStorage.getItem("innovation_workflow_user");
       if (userData) {
         const parsedUser = JSON.parse(userData);
         accessToken = parsedUser.access_token;
+        tokenType = parsedUser.token_type || "bearer";
       }
     } catch (e) {
       console.error("Error getting token from storage:", e);
@@ -101,14 +103,14 @@ export default function UploadPage() {
     formData.append("file", selectedFile);
 
     try {
-      // Upload to the backend with /api prefix
-      const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/upload`;
+      // Upload directly to the backend (not through Next.js API route)
+      const backendUrl = `${API_URL}/projects/${projectId}/stages/1/upload`;
       console.log(`Uploading file directly to backend: ${backendUrl}`);
 
       const response = await fetch(backendUrl, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `${tokenType} ${accessToken}`,
         },
         body: formData,
       });
@@ -116,15 +118,16 @@ export default function UploadPage() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Upload failed:", errorText);
+        if (response.status === 401 || response.status === 403) {
+          setError("Authentication failed. Please log in again.");
+          // You might want to trigger a logout or redirect to login here
+          return null;
+        }
         throw new Error(errorText || "Failed to upload file");
       }
 
       const data = await response.json();
       console.log("Upload response data:", data);
-
-      if (!data.data || data.status !== "completed") {
-        throw new Error("File upload was not processed correctly");
-      }
 
       setFileUploadStatus("Upload successful");
 
@@ -174,11 +177,13 @@ export default function UploadPage() {
 
       // Get access token from local storage
       let accessToken = "";
+      let tokenType = "bearer";
       try {
         const userData = localStorage.getItem("innovation_workflow_user");
         if (userData) {
           const parsedUser = JSON.parse(userData);
           accessToken = parsedUser.access_token;
+          tokenType = parsedUser.token_type || "bearer";
         }
       } catch (e) {
         console.error("Error getting token from storage:", e);
@@ -193,7 +198,7 @@ export default function UploadPage() {
       await delay(5000);
 
       // Call the Stage 1 Part 2 API endpoint with retries
-      const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/generate`;
+      const backendUrl = `${API_URL}/projects/${projectId}/stages/1/generate`;
       console.log("Generating analysis using:", backendUrl);
 
       let retries = 3;
@@ -204,7 +209,7 @@ export default function UploadPage() {
           const response = await fetch(backendUrl, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${accessToken}`,
+              Authorization: `${tokenType} ${accessToken}`,
               "Content-Type": "application/json",
             },
           });
@@ -212,6 +217,9 @@ export default function UploadPage() {
           if (!response.ok) {
             const errorText = await response.text();
             console.error("Analysis generation failed:", errorText);
+            if (response.status === 401 || response.status === 403) {
+              throw new Error("Authentication failed. Please log in again.");
+            }
             throw new Error(errorText || "Failed to generate analysis");
           }
 
@@ -219,11 +227,7 @@ export default function UploadPage() {
           console.log("Analysis response:", data);
 
           // Check if we got a proper analysis
-          if (
-            data.data?.analysis &&
-            !data.data.analysis.includes("need the document") &&
-            !data.data.analysis.includes("upload the document")
-          ) {
+          if (data?.data?.analysis) {
             analysisData = data;
             break;
           }
@@ -422,7 +426,7 @@ export default function UploadPage() {
                       hover:opacity-90 transition-opacity inline-flex items-center gap-2"
               disabled={!analysis}
             >
-              Define Problem Statement
+              Define Problems
               <Rocket className="w-5 h-5" />
             </button>
           </div>
