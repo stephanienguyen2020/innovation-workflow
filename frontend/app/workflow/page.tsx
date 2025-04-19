@@ -10,7 +10,6 @@ export default function WorkflowPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Get project ID and problem from local storage
     const storedProjectId = localStorage.getItem("currentProjectId");
     const storedProblem = localStorage.getItem("currentProblem");
 

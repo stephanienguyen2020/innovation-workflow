@@ -21,6 +21,9 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileUploadStatus, setFileUploadStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<
+    Array<{ name: string; uploadedAt: string }>
+  >([]);
 
   useEffect(() => {
     // Get the project ID from URL params or localStorage as fallback
@@ -98,7 +101,7 @@ export default function UploadPage() {
     formData.append("file", selectedFile);
 
     try {
-      // Upload directly to the backend
+      // Upload to the backend with /api prefix
       const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/upload`;
       console.log(`Uploading file directly to backend: ${backendUrl}`);
 
@@ -110,8 +113,6 @@ export default function UploadPage() {
         body: formData,
       });
 
-      console.log("Upload response status:", response.status);
-
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Upload failed:", errorText);
@@ -119,11 +120,26 @@ export default function UploadPage() {
       }
 
       const data = await response.json();
-      console.log("Upload response data:", JSON.stringify(data, null, 2));
+      console.log("Upload response data:", data);
+
+      if (!data.data || data.status !== "completed") {
+        throw new Error("File upload was not processed correctly");
+      }
 
       setFileUploadStatus("Upload successful");
 
-      // If the upload was successful, show the analysis generation button
+      // Add the uploaded file to the list
+      setUploadedFiles((prev) => [
+        ...prev,
+        {
+          name: selectedFile.name,
+          uploadedAt: new Date().toLocaleString(),
+        },
+      ]);
+
+      // Clear the selected file
+      setSelectedFile(null);
+
       return data;
     } catch (err) {
       console.error("Error uploading file:", err);
@@ -134,6 +150,9 @@ export default function UploadPage() {
       return null;
     }
   };
+
+  const delay = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
   const handleGenerateAnalysis = async () => {
     if (!projectId) {
@@ -170,61 +189,78 @@ export default function UploadPage() {
         throw new Error("No access token available");
       }
 
-      // Call directly to the backend API
+      // Wait for document processing (5 seconds)
+      await delay(5000);
+
+      // Call the Stage 1 Part 2 API endpoint with retries
       const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/generate`;
-      console.log(`Generating analysis directly from backend: ${backendUrl}`);
+      console.log("Generating analysis using:", backendUrl);
 
-      const response = await fetch(backendUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      let retries = 3;
+      let analysisData = null;
 
-      console.log("Analysis response status:", response.status);
+      while (retries > 0 && !analysisData) {
+        try {
+          const response = await fetch(backendUrl, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Analysis generation failed:", errorText);
-        throw new Error(errorText || "Failed to generate analysis");
-      }
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Analysis generation failed:", errorText);
+            throw new Error(errorText || "Failed to generate analysis");
+          }
 
-      const data = await response.json();
-      console.log("Analysis response data:", JSON.stringify(data, null, 2));
+          const data = await response.json();
+          console.log("Analysis response:", data);
 
-      // Get the analysis from the response
-      // The stage data structure might include data.data.analysis
-      // or have a nested structure with stages[0].data.analysis
-      let analysisText = "";
+          // Check if we got a proper analysis
+          if (
+            data.data?.analysis &&
+            !data.data.analysis.includes("need the document") &&
+            !data.data.analysis.includes("upload the document")
+          ) {
+            analysisData = data;
+            break;
+          }
 
-      if (data.data?.analysis) {
-        // Direct data structure
-        analysisText = data.data.analysis;
-      } else if (data.stages && data.stages.length > 0) {
-        // Nested structure with stages array
-        const stage1 = data.stages.find(
-          (stage: any) => stage.stage_number === 1
-        );
-        if (stage1 && stage1.data && stage1.data.analysis) {
-          analysisText = stage1.data.analysis;
+          // If no proper analysis, wait and retry
+          console.log("Waiting for document processing...");
+          await delay(3000);
+          retries--;
+        } catch (err) {
+          console.error("Error in analysis attempt:", err);
+          retries--;
+          if (retries > 0) {
+            await delay(3000);
+          } else {
+            throw err;
+          }
         }
       }
 
-      if (!analysisText) {
-        analysisText =
-          "Analysis completed successfully, but no detailed results were returned.";
+      if (!analysisData) {
+        throw new Error("Failed to generate analysis after multiple attempts");
       }
 
-      setAnalysis(analysisText);
+      setAnalysis(analysisData.data.analysis);
     } catch (err) {
       console.error("Error generating analysis:", err);
       setError(
         err instanceof Error ? err.message : "An unexpected error occurred"
       );
+      setAnalysis(""); // Clear any previous analysis on error
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const handleDeleteFile = (index: number) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -255,7 +291,6 @@ export default function UploadPage() {
         {/* Main Content */}
         <div className="space-y-8">
           <h2 className="text-4xl font-bold">Interview Transcript Analysis</h2>
-          <p className="text-sm text-gray-500">Project ID: {projectId}</p>
 
           {error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
@@ -297,36 +332,52 @@ export default function UploadPage() {
                   )}
                 </label>
               </div>
-              {selectedFile && fileUploadStatus !== "Upload successful" && (
-                <button
-                  onClick={handleUploadToServer}
-                  disabled={!selectedFile}
-                  className="mt-4 bg-black text-white px-4 py-2 rounded-[10px] text-sm font-medium
-                      hover:opacity-90 transition-opacity disabled:opacity-50 w-full"
-                >
-                  Upload to Server
-                </button>
+
+              {/* Uploaded Files List */}
+              {uploadedFiles.length > 0 && (
+                <div className="mt-6 bg-white rounded-lg p-4">
+                  <h4 className="text-xl font-medium mb-4">Uploaded files:</h4>
+                  <div className="space-y-2">
+                    {uploadedFiles.map((file, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between py-3 px-4 bg-gray-50 rounded"
+                      >
+                        <span className="text-base">{file.name}</span>
+                        <button
+                          onClick={() => handleDeleteFile(index)}
+                          className="text-gray-400 hover:text-gray-600"
+                          aria-label="Delete file"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* Text section showing help */}
+            {/* Text Input Section */}
             <div className="space-y-2">
-              <h3 className="text-2xl font-bold">About document upload</h3>
-              <div className="w-full h-[300px] p-4 border rounded-lg overflow-y-auto">
-                <p className="mb-4">
-                  Please upload a PDF document containing interview transcripts
-                  or research data for analysis.
-                </p>
-                <ul className="list-disc pl-5 space-y-2">
-                  <li>Only PDF files are supported</li>
-                  <li>Maximum file size: 10MB</li>
-                  <li>The document should contain relevant research data</li>
-                  <li>
-                    After uploading, click "Generate Analysis" to process the
-                    document
-                  </li>
-                </ul>
-              </div>
+              <h3 className="text-2xl font-bold">Paste copied text</h3>
+              <textarea
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder="paste text here*"
+                className="w-full h-[300px] p-4 border rounded-lg resize-none"
+              />
             </div>
           </div>
 
@@ -371,7 +422,7 @@ export default function UploadPage() {
                       hover:opacity-90 transition-opacity inline-flex items-center gap-2"
               disabled={!analysis}
             >
-              Next: Define Problems
+              Define Problem Statement
               <Rocket className="w-5 h-5" />
             </button>
           </div>
