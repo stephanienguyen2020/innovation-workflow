@@ -77,9 +77,6 @@ class ProjectService:
                 temp_file.write(content)
 
             try:
-                # Initialize RAG service
-                await rag_service.initialize()
-
                 # Ingest PDF using directory reader and get document ID
                 parent_doc_id = await rag_service.ingest_documents_from_directory(
                     temp_dir,
@@ -116,8 +113,7 @@ class ProjectService:
             raise HTTPException(status_code=400, detail="No document uploaded. Please upload a document first.")
 
         try:
-            # Initialize RAG service and create query engine
-            await rag_service.initialize()
+            # Create query engine
             query_engine = await rag_service.create_document_query_engine(project.document_id)
             
             # Create tools for the agent
@@ -171,8 +167,7 @@ class ProjectService:
         if not analysis:
             raise HTTPException(status_code=400, detail="Stage 1 analysis is missing")
             
-        # Initialize RAG service and create query engine with stage-specific parser
-        await rag_service.initialize()
+        # Create query engine with stage-specific parser
         query_engine = await rag_service.create_document_query_engine(
             project.document_id,
             stage_number=2
@@ -305,8 +300,7 @@ class ProjectService:
                 stage_data
             )
             
-        # Initialize RAG service and create query engine with stage-specific parser
-        await rag_service.initialize()
+        # Create query engine with stage-specific parser
         query_engine = await rag_service.create_document_query_engine(
             project.document_id,
             stage_number=3
