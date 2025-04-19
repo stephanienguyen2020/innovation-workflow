@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "../../context/AuthContext";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export default function SignupPage() {
   const [firstName, setFirstName] = useState("");
@@ -15,6 +16,7 @@ export default function SignupPage() {
   const [redirectMessage, setRedirectMessage] = useState("");
   const { signup, loading } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   useEffect(() => {
     // Check if redirected from a protected page
@@ -40,8 +42,13 @@ export default function SignupPage() {
 
     try {
       await signup(firstName, lastName, email, password);
+      // After successful signup, redirect to login page with a success message
+      router.push(
+        "/login?message=Account created successfully! Please log in."
+      );
     } catch (err) {
-      setError("Error creating account");
+      console.error("Signup error:", err);
+      setError(err instanceof Error ? err.message : "Error creating account");
     }
   };
 

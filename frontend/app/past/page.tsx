@@ -1,8 +1,8 @@
 "use client";
 
-import { useAuth } from "@/context/AuthContext";
+import { useState, useEffect } from "react";
+import { useAuth } from "../../context/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 
 // Placeholder project data
 const placeholderProjects = [

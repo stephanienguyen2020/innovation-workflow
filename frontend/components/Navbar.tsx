@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "../context/AuthContext";
 import { useState, useRef, useEffect } from "react";
 
 export default function Navbar() {
@@ -53,14 +53,18 @@ export default function Navbar() {
                 onMouseLeave={handleMouseLeave}
               >
                 <button className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-800 font-medium focus:outline-none">
-                  {user.avatar ? (
+                  {user?.avatar ? (
                     <img
                       src={user.avatar}
-                      alt={user.name}
+                      alt={user?.name || "User"}
                       className="w-full h-full rounded-full object-cover"
                     />
                   ) : (
-                    <span>{user.name.charAt(0).toUpperCase()}</span>
+                    <span>
+                      {user?.name && user.name.length > 0
+                        ? user.name.charAt(0).toUpperCase()
+                        : "U"}
+                    </span>
                   )}
                 </button>
 
@@ -72,7 +76,7 @@ export default function Navbar() {
                   >
                     <div className="px-4 py-2 text-sm text-gray-700 border-b flex items-center gap-2">
                       <span className="text-gray-400">👤</span>
-                      {user.name}
+                      {user?.name || user?.email || "User"}
                     </div>
                     <button
                       onClick={async () => {
