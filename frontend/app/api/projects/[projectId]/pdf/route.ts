@@ -10,7 +10,7 @@ export async function GET(
   try {
     // Get the project ID from the URL
     const projectId = params.projectId;
-    console.log(`Fetching PDF for project ID: ${projectId}`);
+    console.log(`Generating PDF for project ID: ${projectId}`);
 
     // Get the access token from cookies for authentication
     const accessToken = cookies().get("access_token")?.value;
@@ -25,55 +25,61 @@ export async function GET(
       headers["Authorization"] = `Bearer ${accessToken}`;
     }
 
-    const apiUrl = `${API_URL}/api/projects/${projectId}/pdf`;
-    console.log(`Calling backend API at: ${apiUrl}`);
+    // Fetch the report data from our report endpoint
+    const reportResponse = await fetch(
+      `${request.nextUrl.origin}/api/projects/${projectId}/report`,
+      { headers }
+    );
 
-    // Call the backend API to fetch the PDF
-    const response = await fetch(apiUrl, {
-      method: "GET",
-      headers,
-    });
-
-    console.log("Backend response status:", response.status);
-
-    // If response is not OK, handle error
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Failed to fetch PDF:", errorText);
-
-      try {
-        // Try to parse as JSON
-        const errorData = JSON.parse(errorText);
-        return NextResponse.json(
-          { detail: errorData.detail || "Failed to download PDF" },
-          { status: response.status }
-        );
-      } catch (e) {
-        // If not JSON, return the raw text
-        return NextResponse.json(
-          { detail: errorText || "Failed to download PDF" },
-          { status: response.status }
-        );
-      }
+    if (!reportResponse.ok) {
+      throw new Error("Failed to fetch report data for PDF generation");
     }
 
-    // Get the PDF content as ArrayBuffer
-    const pdfBuffer = await response.arrayBuffer();
+    const reportData = await reportResponse.json();
 
-    // Create a response with the PDF content
-    const pdfResponse = new NextResponse(pdfBuffer, {
+    // Generate PDF content as a formatted string (for now)
+    // In a real implementation, we would use a PDF generation library
+    const pdfContent = `
+Innovation Workflow Analysis
+
+Generated on: ${new Date().toLocaleDateString()}
+
+==============================
+RESEARCH ANALYSIS
+==============================
+${reportData.analysis}
+
+==============================
+IDENTIFIED PROBLEM
+==============================
+${reportData.chosen_problem.statement}
+
+${reportData.chosen_problem.explanation}
+
+==============================
+CHOSEN SOLUTION
+==============================
+${reportData.chosen_solution.idea}
+
+${reportData.chosen_solution.explanation}
+    `;
+
+    // Return the content as a PDF (in a simple format for now)
+    return new NextResponse(pdfContent, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="innovation_report_${projectId}.pdf"`,
       },
     });
-
-    return pdfResponse;
   } catch (error) {
-    console.error("PDF fetch error:", error);
+    console.error("PDF generation error:", error);
     return NextResponse.json(
-      { detail: "An error occurred while fetching the PDF" },
+      {
+        detail:
+          (error as Error).message ||
+          "An error occurred while generating the PDF",
+      },
       { status: 500 }
     );
   }

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Download, ArrowLeft } from "lucide-react";
+import { Loader2, Download, ArrowLeft, AlertCircle } from "lucide-react";
+import jsPDF from "jspdf";
 
 interface ReportData {
   title: string;
@@ -28,6 +29,8 @@ export default function ReportPage() {
   const [generatingReport, setGeneratingReport] = useState(false);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
 
   useEffect(() => {
     if (!projectId || !solutionId) {
@@ -76,37 +79,105 @@ export default function ReportPage() {
     generateReport();
   }, [projectId, solutionId]);
 
+  // Reset download status messages after 5 seconds
+  useEffect(() => {
+    if (downloadSuccess || downloadError) {
+      const timer = setTimeout(() => {
+        setDownloadSuccess(false);
+        setDownloadError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [downloadSuccess, downloadError]);
+
   const handleDownload = async () => {
-    if (!projectId) return;
+    if (!projectId || !reportData) return;
 
     try {
+      // Reset any previous download status
+      setDownloadError(null);
+      setDownloadSuccess(false);
       setDownloadingPdf(true);
 
-      // Initiate PDF download
-      const response = await fetch(`/api/projects/${projectId}/pdf`);
+      // Create a new PDF document (A4 format)
+      const pdf = new jsPDF();
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to download PDF");
+      // Set font size and add title
+      pdf.setFontSize(20);
+      pdf.text(reportData.title, 20, 20);
+
+      pdf.setFontSize(12);
+      pdf.text(
+        `Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+        20,
+        30
+      );
+      pdf.text(`Project ID: ${projectId}`, 20, 38);
+
+      // Add Research Analysis section
+      pdf.setFontSize(16);
+      pdf.text("RESEARCH ANALYSIS", 20, 50);
+      pdf.setFontSize(10);
+
+      // Handle long text by splitting into multiple lines
+      const analysisLines = pdf.splitTextToSize(reportData.analysis, 170);
+      pdf.text(analysisLines, 20, 60);
+
+      // Calculate Y position for next section based on number of lines
+      let yPos = 65 + analysisLines.length * 5;
+
+      // Add Problem section
+      pdf.setFontSize(16);
+      pdf.text("IDENTIFIED PROBLEM", 20, yPos);
+      pdf.setFontSize(12);
+      yPos += 10;
+
+      const problemLines = pdf.splitTextToSize(
+        reportData.chosen_problem.statement,
+        170
+      );
+      pdf.text(problemLines, 20, yPos);
+      yPos += problemLines.length * 7;
+
+      const problemExplanationLines = pdf.splitTextToSize(
+        reportData.chosen_problem.explanation,
+        170
+      );
+      pdf.text(problemExplanationLines, 20, yPos);
+      yPos += problemExplanationLines.length * 7 + 10;
+
+      // Add a new page if we're running out of space
+      if (yPos > 250) {
+        pdf.addPage();
+        yPos = 20;
       }
 
-      // Create a blob from the PDF data
-      const blob = await response.blob();
+      // Add Solution section
+      pdf.setFontSize(16);
+      pdf.text("CHOSEN SOLUTION", 20, yPos);
+      pdf.setFontSize(12);
+      yPos += 10;
 
-      // Create a link element and trigger download
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `innovation_report_${projectId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
+      const solutionLines = pdf.splitTextToSize(
+        reportData.chosen_solution.idea,
+        170
+      );
+      pdf.text(solutionLines, 20, yPos);
+      yPos += solutionLines.length * 7;
 
-      // Clean up
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      const solutionExplanationLines = pdf.splitTextToSize(
+        reportData.chosen_solution.explanation,
+        170
+      );
+      pdf.text(solutionExplanationLines, 20, yPos);
+
+      // Save the PDF
+      pdf.save(`innovation_report_${projectId}.pdf`);
+
+      setDownloadSuccess(true);
     } catch (err) {
-      console.error("Error downloading PDF:", err);
-      alert((err as Error).message || "Failed to download PDF");
+      console.error("Error creating PDF report:", err);
+      setDownloadError((err as Error).message || "Failed to create PDF report");
     } finally {
       setDownloadingPdf(false);
     }
@@ -282,7 +353,8 @@ export default function ReportPage() {
           </div>
         </div>
 
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center justify-center space-y-4">
+          {/* Download Button */}
           <button
             onClick={handleDownload}
             disabled={downloadingPdf}
@@ -297,13 +369,28 @@ export default function ReportPage() {
             ) : (
               <>
                 <Download className="w-5 h-5" />
-                Download PDF Report
+                Download Report
               </>
             )}
           </button>
+
+          {/* Download Error Message */}
+          {downloadError && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-lg border border-red-200 max-w-md text-center">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <span>{downloadError}</span>
+            </div>
+          )}
+
+          {/* Download Success Message */}
+          {downloadSuccess && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg border border-green-200 max-w-md text-center">
+              <span>Report downloaded successfully!</span>
+            </div>
+          )}
         </div>
 
-        <div className="flex justify-center mt-6">
+        <div className="flex justify-center">
           <button
             onClick={() =>
               router.push(`/workflow/ideas?projectId=${projectId}`)
