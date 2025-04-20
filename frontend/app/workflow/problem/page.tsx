@@ -63,69 +63,19 @@ export default function ProblemDefinitionPage() {
           );
         }
 
-        const data = await response.json();
-        console.log("Problem generation successful, result:", data);
+        const fetchData = await response.json();
+        console.log("Problem generation successful, result:", fetchData);
 
-        // Wait a moment to allow backend processing to complete
-        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        // Try to fetch the problem statements up to 3 times
-        let attempts = 0;
-        let success = false;
-
-        while (attempts < 3 && !success) {
-          attempts++;
-          console.log(
-            `Attempt ${attempts} to fetch problem statements after generation`
-          );
-
-          try {
-            const fetchResponse = await fetch(
-              `/api/projects/${projectId}/stages/2`
-            );
-
-            if (!fetchResponse.ok) {
-              console.log(
-                `Fetch attempt ${attempts} failed with status ${fetchResponse.status}`
-              );
-              // Wait longer between attempts
-              await new Promise((resolve) =>
-                setTimeout(resolve, 1500 * attempts)
-              );
-              continue;
-            }
-
-            const fetchData = await fetchResponse.json();
-            console.log(`Fetch attempt ${attempts} data:`, fetchData);
-
-            if (
-              fetchData &&
-              fetchData.data &&
-              Array.isArray(fetchData.data.problem_statements) &&
-              fetchData.data.problem_statements.length > 0
-            ) {
-              setProblemStatements(fetchData.data.problem_statements);
-              success = true;
-            } else {
-              console.log(
-                `Fetch attempt ${attempts} did not contain problem statements, waiting...`
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, 1500 * attempts)
-              );
-            }
-          } catch (fetchErr) {
-            console.error(`Error in fetch attempt ${attempts}:`, fetchErr);
-            await new Promise((resolve) =>
-              setTimeout(resolve, 1500 * attempts)
-            );
-          }
-        }
-
-        if (!success) {
-          throw new Error(
-            "Generated problem statements could not be retrieved after multiple attempts"
-          );
+        if (
+          fetchData &&
+          fetchData.data &&
+          Array.isArray(fetchData.data.problem_statements) &&
+          fetchData.data.problem_statements.length > 0
+        ) {
+          setProblemStatements(fetchData.data.problem_statements);
+        } else {
+          throw new Error("No problem statements were generated");
         }
       } catch (err) {
         console.error("Problem statement generation error:", err);
@@ -222,10 +172,6 @@ export default function ProblemDefinitionPage() {
       setError(null);
 
       // Build URL with query parameters for the backend API
-      // The backend expects exactly:
-      // - selected_problem_id for predefined problems
-      // - custom_problem for custom problems
-      // - never both at the same time
       let apiUrl = `/api/projects/${projectId}/stages/3/generate`;
       const queryParams = new URLSearchParams();
 
@@ -246,44 +192,12 @@ export default function ProblemDefinitionPage() {
 
       console.log(`Calling API: ${apiUrl}`);
 
-      // Make a maximum of 3 attempts if we get network errors
-      let response: Response | undefined;
-      let attempts = 0;
-      const maxAttempts = 3;
-      let lastError: Error | null = null;
-
-      while (attempts < maxAttempts) {
-        attempts++;
-        try {
-          response = await fetch(apiUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            // No body - using query parameters instead
-          });
-
-          // If we get a response, break the loop
-          break;
-        } catch (networkError) {
-          console.error(`Network error (attempt ${attempts}):`, networkError);
-          lastError = networkError as Error;
-
-          if (attempts === maxAttempts) {
-            throw new Error(
-              "Failed to connect to server after multiple attempts"
-            );
-          }
-
-          // Wait a bit longer between each retry
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempts));
-        }
-      }
-
-      // If we don't have a response after all attempts, throw the last error
-      if (!response) {
-        throw lastError || new Error("Failed to get response from server");
-      }
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
 
       if (!response.ok) {
         let errorMessage = "Failed to process stage 3";

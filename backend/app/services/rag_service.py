@@ -2,6 +2,9 @@ from typing import List, Dict, Any, Tuple
 from dotenv import load_dotenv
 import uuid
 from datetime import datetime
+import os
+import pdfplumber
+import PyPDF2
 
 from llama_index.vector_stores.mongodb import MongoDBAtlasVectorSearch
 from llama_index.core import VectorStoreIndex, StorageContext, Document
@@ -198,39 +201,98 @@ class RAGService:
         filename: str = None
     ) -> str:
         """
-        Ingest documents from a directory into the vector store.
+        Ingest a PDF file using PyPDF2 for text and pdfplumber for tables.
+        Each page and table is processed and added to the vector store incrementally.
         
         Args:
-            directory_path: Path to directory containing documents
-            filename: Original filename (optional)
+            directory_path: Path to directory containing the PDF file
+            filename: Original filename (required for metadata)
             
         Returns:
             Parent document ID
         """
+        if not filename:
+            raise ValueError("Filename is required for document ingestion")
+            
+        
+        # Get the full path to the PDF file
+        file_path = os.path.join(directory_path, filename)
+        if not os.path.exists(file_path):
+            raise ValueError(f"File not found: {file_path}")
+
         # Generate a parent document ID
         parent_doc_id = str(uuid.uuid4())
+        # Extract text with PyPDF2
+        pdf_reader = PyPDF2.PdfReader(file_path)
         
-        # Load documents from directory
-        documents = SimpleDirectoryReader(directory_path).load_data()
-        
-        for doc in documents:
-            # Add metadata to track relationship and source
-            doc.metadata.update({
-                "parent_doc_id": parent_doc_id,
-                "original_filename": filename,
-                "ingestion_timestamp": datetime.utcnow().isoformat(),
-                "is_chunk": True
-            })
-        
-        # Create index from documents
-        index = VectorStoreIndex.from_documents(
-            documents,
-            storage_context=self.storage_context,
-            embed_model=self.embed_model
-        )
-        
-        # Store index for future queries
-        self._index = index
+        # Process PDF page by page
+        for page_num, page in enumerate(pdf_reader.pages, 1):
+            # Extract text from the page
+            text = page.extract_text()
+            
+            if text.strip():  # If page has text content
+                # Create document for page text
+                doc = Document(
+                    text=text,
+                    metadata={
+                        "parent_doc_id": parent_doc_id,
+                        "original_filename": filename,
+                        "page_number": page_num,
+                        "content_type": "text",
+                        "ingestion_timestamp": datetime.utcnow().isoformat(),
+                        "is_chunk": True,
+                        "source": file_path
+                    }
+                )
+                
+                # Add document to index
+                if self._index is None:
+                    self._index = VectorStoreIndex.from_documents(
+                        [doc],
+                        storage_context=self.storage_context,
+                        embed_model=self.embed_model
+                    )
+                else:
+                    self._index.insert(doc)
+
+        # Extract tables with pdfplumber
+        with pdfplumber.open(file_path) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                tables = page.extract_tables()
+                
+                for table_num, table in enumerate(tables, 1):
+                    if table:  # If table is not empty
+                        # Convert table to string representation
+                        table_text = "\n".join([
+                            " | ".join([str(cell) if cell else "" for cell in row])
+                            for row in table
+                        ])
+                        
+                        if table_text.strip():  # If table has content
+                            # Create document for table
+                            doc = Document(
+                                text=table_text,
+                                metadata={
+                                    "parent_doc_id": parent_doc_id,
+                                    "original_filename": filename,
+                                    "page_number": page_num,
+                                    "table_number": table_num,
+                                    "content_type": "table",
+                                    "ingestion_timestamp": datetime.utcnow().isoformat(),
+                                    "is_chunk": True,
+                                    "source": file_path
+                                }
+                            )
+                            
+                            # Add document to index
+                            if self._index is None:
+                                self._index = VectorStoreIndex.from_documents(
+                                    [doc],
+                                    storage_context=self.storage_context,
+                                    embed_model=self.embed_model
+                                )
+                            else:
+                                self._index.insert(doc)
         
         return parent_doc_id
 

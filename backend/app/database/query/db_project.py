@@ -330,3 +330,24 @@ async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document
     )
     
     return project
+
+async def delete_all_data(db: AsyncIOMotorDatabase) -> Dict[str, int]:
+    """
+    Delete all documents from both rag_documents and projects collections.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        Dictionary containing count of deleted documents from each collection
+    """
+    # Delete all documents from rag_documents collection
+    rag_result = await db.rag_documents.delete_many({})
+    
+    # Delete all documents from projects collection
+    projects_result = await db.projects.delete_many({})
+    
+    return {
+        "rag_documents_deleted": rag_result.deleted_count,
+        "projects_deleted": projects_result.deleted_count
+    }

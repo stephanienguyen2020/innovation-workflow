@@ -197,61 +197,35 @@ export default function UploadPage() {
       // Wait for document processing (5 seconds)
       await delay(5000);
 
-      // Call the Stage 1 Part 2 API endpoint with retries
+      // Call the Stage 1 Part 2 API endpoint
       const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/generate`;
       console.log("Generating analysis using:", backendUrl);
 
-      let retries = 3;
-      let analysisData = null;
+      const response = await fetch(backendUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `${tokenType} ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
 
-      while (retries > 0 && !analysisData) {
-        try {
-          const response = await fetch(backendUrl, {
-            method: "POST",
-            headers: {
-              Authorization: `${tokenType} ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Analysis generation failed:", errorText);
-            if (response.status === 401 || response.status === 403) {
-              throw new Error("Authentication failed. Please log in again.");
-            }
-            throw new Error(errorText || "Failed to generate analysis");
-          }
-
-          const data = await response.json();
-          console.log("Analysis response:", data);
-
-          // Check if we got a proper analysis
-          if (data?.data?.analysis) {
-            analysisData = data;
-            break;
-          }
-
-          // If no proper analysis, wait and retry
-          console.log("Waiting for document processing...");
-          await delay(3000);
-          retries--;
-        } catch (err) {
-          console.error("Error in analysis attempt:", err);
-          retries--;
-          if (retries > 0) {
-            await delay(3000);
-          } else {
-            throw err;
-          }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Analysis generation failed:", errorText);
+        if (response.status === 401 || response.status === 403) {
+          throw new Error("Authentication failed. Please log in again.");
         }
+        throw new Error(errorText || "Failed to generate analysis");
       }
 
-      if (!analysisData) {
-        throw new Error("Failed to generate analysis after multiple attempts");
+      const data = await response.json();
+      console.log("Analysis response:", data);
+
+      if (!data?.data?.analysis) {
+        throw new Error("No analysis data received from the server");
       }
 
-      setAnalysis(analysisData.data.analysis);
+      setAnalysis(data.data.analysis);
     } catch (err) {
       console.error("Error generating analysis:", err);
       setError(

@@ -10,25 +10,19 @@ export default function WorkflowPage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [mounted, setMounted] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // First ensure component is mounted to prevent hydration issues
+  // Handle authentication and data loading
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    const initializePage = () => {
+      if (authLoading) return;
 
-  useEffect(() => {
-    // Skip this effect if not mounted yet
-    if (!mounted) return;
+      if (!user) {
+        window.location.href = "/login?redirect=/workflow";
+        return;
+      }
 
-    // If user is not authenticated after loading, redirect to login
-    if (!authLoading && !user) {
-      router.push("/login?redirect=/workflow");
-      return;
-    }
-
-    // Only proceed with localStorage checks after mounting and if authenticated
-    if (mounted && user) {
+      // Get data from localStorage
       const storedProjectId = localStorage.getItem("currentProjectId");
       const storedProblem = localStorage.getItem("currentProblem");
 
@@ -36,27 +30,36 @@ export default function WorkflowPage() {
       console.log("Retrieved from localStorage - Problem:", storedProblem);
 
       if (!storedProjectId) {
-        // Redirect to new project page if no project ID is found
-        console.warn(
-          "No project ID found in localStorage, redirecting to /new"
-        );
-        router.push("/new");
+        console.warn("No project ID found in localStorage, redirecting to /new");
+        window.location.href = "/new";
         return;
       }
 
+      // Update state
       setProjectId(storedProjectId);
       setProblem(storedProblem);
       setIsLoading(false);
-    }
-  }, [router, user, authLoading, mounted]);
+      setIsInitialized(true);
+    };
 
-  // If not mounted or still loading, show a safe loading state
-  if (!mounted || isLoading || authLoading) {
+    // Run initialization
+    if (!isInitialized) {
+      initializePage();
+    }
+  }, [user, authLoading, isInitialized]);
+
+  // Show loading state
+  if (isLoading || authLoading || !isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-xl">Loading workflow...</p>
       </div>
     );
+  }
+
+  // Only render the main content when everything is ready
+  if (!projectId || !problem) {
+    return null;
   }
 
   return (

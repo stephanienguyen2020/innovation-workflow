@@ -15,6 +15,21 @@ type User = {
   avatar?: string;
 };
 
+type LoginResponse = {
+  userId: string;
+  name: string;
+  email: string;
+  access_token: string;
+};
+
+type StoredUserData = {
+  userId: string;
+  name: string;
+  email: string;
+  access_token: string;
+  token_type: string;
+};
+
 type AuthContextType = {
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
@@ -43,7 +58,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (typeof window !== "undefined") {
         const storedUser = localStorage.getItem(USER_STORAGE_KEY);
         if (storedUser) {
-          return JSON.parse(storedUser);
+          const userData = JSON.parse(storedUser) as StoredUserData;
+          // Return just the user data portion
+          return {
+            id: userData.userId,
+            name: userData.name,
+            email: userData.email,
+          };
         }
       }
     } catch (error) {
@@ -52,11 +73,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
-  // Function to save user to localStorage
-  const saveUserToStorage = (userData: User) => {
+  // Function to save user data and token to localStorage
+  const saveUserToStorage = (loginResponse: LoginResponse) => {
     try {
       if (typeof window !== "undefined") {
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
+        console.log("Saving user to storage:", loginResponse);
+        // Store both user data and access token
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
+          userId: loginResponse.userId,
+          name: loginResponse.name,
+          email: loginResponse.email,
+          access_token: loginResponse.access_token,
+          token_type: "bearer"
+        } as StoredUserData));
       }
     } catch (error) {
       console.error("Error saving user to storage:", error);
@@ -85,47 +114,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(storedUser);
         }
 
-        // Always validate with server regardless of localStorage
+        // Just check if token is valid
         const response = await fetch("/api/auth/me");
 
-        if (response.ok) {
-          const userData = await response.json();
-          if (userData && Object.keys(userData).length > 0) {
-            console.log("Got valid user data from server:", userData);
-            setUser(userData);
-            saveUserToStorage(userData);
-          } else if (storedUser) {
-            // If server returns empty but we have stored user, keep using stored user
-            console.log("Server returned empty user data, keeping stored user");
-          } else {
-            // No stored user and server returned empty
-            console.log("No user data available");
-            setUser(null);
-            clearUserFromStorage();
-          }
-        } else {
+        if (!response.ok) {
           // Server returned error
           console.warn("Server session validation failed:", response.status);
-          if (storedUser) {
-            // Keep the stored user temporarily to prevent immediate logout
-            // The user experience is better if we show them as logged in
-            // and then handle auth failures when they try to perform actions
-            console.log(
-              "Keeping stored user despite server validation failure"
-            );
-          } else {
-            setUser(null);
-            clearUserFromStorage();
-          }
+          setUser(null);
+          clearUserFromStorage();
         }
       } catch (error) {
         console.error("Authentication check failed:", error);
-        // On error, keep existing user if available
-        const storedUser = getUserFromStorage();
-        if (storedUser && !user) {
-          console.log("Using stored user after server error");
-          setUser(storedUser);
-        }
+        // On error, clear user data
+        setUser(null);
+        clearUserFromStorage();
       } finally {
         setLoading(false);
       }
@@ -151,20 +153,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error("Login failed");
       }
 
-      const userData = await response.json();
-      console.log("Login successful, user data:", userData);
+      const data = await response.json();
+      console.log("Login successful, response data:", data);
 
-      // Set the user state
-      setUser(userData);
+      // Create login response object with both user data and token
+      const loginResponse: LoginResponse = {
+        userId: data.userId,
+        name: data.name,
+        email: data.email,
+        access_token: data.access_token
+      };
 
-      // Store user data in localStorage for persistence
-      saveUserToStorage(userData);
+      // Set the user state (only with user info, not token)
+      setUser({
+        id: loginResponse.userId,
+        name: loginResponse.name,
+        email: loginResponse.email
+      });
+
+      // Store complete login response including token in localStorage
+      saveUserToStorage(loginResponse);
 
       // Ensure the state update completes
       await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // Return the user data in case it's needed
-      return userData;
     } catch (error) {
       console.error("Login error:", error);
       throw error;

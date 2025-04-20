@@ -94,9 +94,8 @@ export default function NewProject() {
       // Log the full response to inspect the structure
       console.log("Project creation response:", JSON.stringify(data, null, 2));
 
-      // Store the project ID from the response
-      // Try both _id and id formats to handle different API response structures
-      const projectId = data._id || data.id;
+      // Get the project ID from the response (use _id as it's the MongoDB format)
+      const projectId = data._id;
 
       if (!projectId) {
         console.error("Project ID not found in response:", data);
@@ -105,12 +104,12 @@ export default function NewProject() {
 
       console.log("Using project ID:", projectId);
 
-      // Store the project ID and problem in local storage
+      // Store project info in localStorage
       localStorage.setItem("currentProjectId", projectId);
       localStorage.setItem("currentProblem", problem);
 
-      // Navigate to the workflow page
-      router.push("/workflow");
+      // Force a full page load instead of client-side navigation
+      window.location.href = "/workflow";
     } catch (err) {
       console.error("Error creating project:", err);
       setError(

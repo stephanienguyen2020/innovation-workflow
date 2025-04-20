@@ -378,51 +378,13 @@ export default function IdeationPage() {
 
                 console.log(`Calling API: ${apiUrl}`);
 
-                // Make a maximum of 3 attempts
-                let response: Response | undefined;
-                let attempts = 0;
-                const maxAttempts = 3;
-                let lastError: Error | null = null;
-
-                while (attempts < maxAttempts) {
-                  attempts++;
-                  try {
-                    response = await fetch(apiUrl, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      // No body - using query parameters instead
-                    });
-
-                    // If we get a response, break the loop
-                    break;
-                  } catch (networkError) {
-                    console.error(
-                      `Network error (attempt ${attempts}):`,
-                      networkError
-                    );
-                    lastError = networkError as Error;
-
-                    if (attempts === maxAttempts) {
-                      throw new Error(
-                        "Failed to connect to server after multiple attempts"
-                      );
-                    }
-
-                    // Wait a bit longer between each retry
-                    await new Promise((resolve) =>
-                      setTimeout(resolve, 1000 * attempts)
-                    );
-                  }
-                }
-
-                // If we don't have a response after all attempts, throw the last error
-                if (!response) {
-                  throw (
-                    lastError || new Error("Failed to get response from server")
-                  );
-                }
+                const response = await fetch(apiUrl, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  // No body - using query parameters instead
+                });
 
                 if (!response.ok) {
                   let errorMessage = "Failed to regenerate ideas";
@@ -431,10 +393,7 @@ export default function IdeationPage() {
                     const errorData = await response.json();
                     errorMessage = errorData.detail || errorMessage;
                   } catch (parseError) {
-                    console.error(
-                      "Failed to parse error response:",
-                      parseError
-                    );
+                    console.error("Failed to parse error response:", parseError);
                     try {
                       // Try to get the text if JSON parsing fails
                       const errorText = await response.text();

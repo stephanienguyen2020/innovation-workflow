@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     console.log("Login response status:", response.status);
-    console.log("Login response body:", JSON.stringify(data));
+    console.log("Login response body:", data);
 
     if (!response.ok) {
       console.error("Login failed:", data);
@@ -50,13 +50,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract user data from the response
-    // The backend response structure is:
-    // { "access_token": "...", "user": { "userId": "...", "username": "...", "priviledge": "..." } }
-
+    console.log("Login successful:", data);
     // Format user data for the frontend
     const userData = {
-      id: data.user?.userId || "", // Use the userId from the user object
+      userId: data.user?.userId, // Use the userId from the user object
       email: data.user?.username || username,
       name: data.user?.username?.split("@")[0] || username.split("@")[0],
       access_token: data.access_token,
