@@ -2,21 +2,21 @@
 
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function WelcomeScreen() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
 
-  // Add a useEffect to force component update when user state changes
   useEffect(() => {
-    // This is just a dependency effect to ensure the component re-renders
-    // when the user state changes
-    console.log(
-      "User state in WelcomeScreen:",
-      user ? "logged in" : "not logged in"
-    );
-  }, [user]);
+    setMounted(true);
+  }, []);
+
+  // If not mounted or still loading, show nothing to prevent flash
+  if (!mounted || loading) {
+    return null;
+  }
 
   const handleStartNewClick = () => {
     if (!user) {

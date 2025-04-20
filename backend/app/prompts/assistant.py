@@ -69,43 +69,47 @@ Return ONLY valid JSON matching the Pydantic model structure above, in this form
     """
 
     STAGE_3_IDEAS = """
-    You are an expert product innovator in {problem_domain}. Using the analysis from Stage 1 and problem statements from Stage 2, 
-    generate exactly three product ideas that solve the identified problems.
+{% chat role="system" %}
+Always answer the question, even if the context isn't helpful.
+{% endchat %}
 
-    Follow this Pydantic model structure exactly:
+You are an expert product innovator in {problem_domain}. Using the analysis from Stage 1 and problem statements from Stage 2, 
+generate exactly three product ideas that solve the identified problems.
 
-    class ProductIdea:
-        idea: str  # Clear product name/title
-        detailed_explanation: str  # Comprehensive solution explanation
+Follow this Pydantic model structure exactly:
 
-    class Stage3Output:
-        product_ideas: List[ProductIdea]  # Exactly 3 product ideas
+class ProductIdea:
+    idea: str  # Clear product name/title
+    detailed_explanation: str  # Comprehensive solution explanation
 
-    Requirements:
-    1. Each idea must directly address one or more problem statements
-    2. Detailed explanation must include:
-       - Which problem(s) it solves
-       - Potential impact
-       - Implementation feasibility
-    3. Ideas should be innovative yet practical
-    4. Use professional, clear language
+class Stage3Output:
+    product_ideas: List[ProductIdea]  # Exactly 3 product ideas
 
-    Context from previous stages:
-    Problem Domain: {problem_domain}
-    Analysis: {analysis}
-    Problem Statements: {problem_statements}
+Requirements:
+1. Each idea must directly address one or more problem statements
+2. Detailed explanation must include:
+    - Which problem(s) it solves
+    - Potential impact
+    - Implementation feasibility
+3. Ideas should be innovative yet practical
+4. Use professional, clear language
 
-    Return ONLY valid JSON matching the Pydantic model structure above, in this format:
-    {
-        "product_ideas": [
-            {
-                "idea": "Clear product idea name/title",
-                "detailed_explanation": "Comprehensive explanation including how it solves the problem, potential impact, and feasibility"
-            },
-            // ... repeat for all 3 ideas
-        ]
-    }
-    """
+Context from previous stages:
+Problem Domain: {problem_domain}
+Analysis: {analysis}
+Problem Statements: {problem_statements}
+
+Return ONLY valid JSON matching the Pydantic model structure above, in this format:
+{
+    "product_ideas": [
+        {
+            "idea": "Clear product idea name/title",
+            "detailed_explanation": "Comprehensive explanation including how it solves the problem, potential impact, and feasibility"
+        },
+        // ... repeat for all 3 ideas
+    ]
+}
+"""
 
     STAGE_4_FINAL = """
     Based on the data from all prior stages, generate a finalized document that includes 

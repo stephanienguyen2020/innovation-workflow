@@ -29,20 +29,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user ID from query parameter
-    const url = new URL(request.url);
-    const user_id = url.searchParams.get("user_id");
-
-    console.log("Creating project - User ID from query:", user_id);
-
-    if (!user_id) {
-      return NextResponse.json(
-        { detail: "User ID is required" },
-        { status: 400 }
-      );
-    }
-
-    const apiUrl = `${API_URL}/projects/?user_id=${user_id}`;
+    const apiUrl = `${API_URL}/api/projects`;
     console.log("Creating project - calling backend at:", apiUrl);
 
     // Call the backend API endpoint to create a project
@@ -95,6 +82,76 @@ export async function POST(request: NextRequest) {
     console.error("Project creation error:", error);
     return NextResponse.json(
       { detail: "An error occurred while creating the project" },
+      { status: 500 }
+    );
+  }
+}
+
+export interface Project {
+  _id: string;
+  user_id: string;
+  problem_domain: string;
+  document_id: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  stages: Array<{
+    stage_number: number;
+    status: string;
+    data: any;
+    created_at: string;
+    updated_at: string;
+  }>;
+}
+
+export async function GET() {
+  try {
+    // Get the access token from cookies for authentication
+    const accessToken = cookies().get("access_token")?.value;
+
+    console.log("Fetching projects - Access token exists:", !!accessToken);
+
+    if (!accessToken) {
+      return NextResponse.json(
+        { detail: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const response = await fetch(`${API_URL}/api/projects/`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Projects fetch failed:", errorText);
+
+      try {
+        // Try to parse as JSON
+        const errorData = JSON.parse(errorText);
+        return NextResponse.json(
+          { detail: errorData.detail || "Failed to fetch projects" },
+          { status: response.status }
+        );
+      } catch (e) {
+        // If not JSON, return the raw text
+        return NextResponse.json(
+          { detail: errorText || "Failed to fetch projects" },
+          { status: response.status }
+        );
+      }
+    }
+
+    const data = await response.json();
+    console.log("Projects fetched successfully:", data.length, "projects");
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    return NextResponse.json(
+      { detail: "An error occurred while fetching projects" },
       { status: 500 }
     );
   }

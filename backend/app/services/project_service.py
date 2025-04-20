@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 
 from app.database.query.db_project import (
     create_project,
-    get_project,
+    get_project as db_get_project,
+    get_projects_by_user_id,
     get_project_pdf_data,
     get_stage,
     update_stage_1,
@@ -51,17 +52,42 @@ class ProjectService:
         return await create_project(db, user_id, problem_domain)
 
     @staticmethod
-    async def get_project(db: AsyncIOMotorDatabase, project_id: str) -> Project:
-        """Get project by ID."""
-        return await get_project(db, project_id)
+    async def get_user_projects(db: AsyncIOMotorDatabase, user_id: str) -> List[Project]:
+        """
+        Get all projects belonging to a specific user.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            
+        Returns:
+            List of projects belonging to the user
+        """
+        return await get_projects_by_user_id(db, user_id)
 
     @staticmethod
-    async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int) -> Stage:
+    async def get_project_by_id(db: AsyncIOMotorDatabase, project_id: str, user_id: str = None) -> Project:
+        """
+        Get project by ID with optional user validation.
+        
+        Args:
+            db: Database session
+            project_id: Project ID
+            user_id: Optional user ID to validate project ownership
+            
+        Returns:
+            Project if found and belongs to user (if user_id provided)
+        """
+        return await db_get_project(db, project_id, user_id)
+
+    @staticmethod
+    async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int, user_id: str) -> Stage:
         """Get specific stage of a project."""
-        return await get_stage(db, project_id, stage_number)
+        project = await db_get_project(db, project_id, user_id)
+        return next((stage for stage in project.stages if stage.stage_number == stage_number), None)
 
     @staticmethod
-    async def upload_document(db: AsyncIOMotorDatabase, project_id: str, file: UploadFile) -> Stage:
+    async def upload_document(db: AsyncIOMotorDatabase, project_id: str, file: UploadFile, user_id: str) -> Stage:
         """
         Stage 1 - Part 1: Upload PDF and store document ID.
         
@@ -69,11 +95,12 @@ class ProjectService:
             db: Database session
             project_id: Project ID
             file: Uploaded PDF file
+            user_id: User ID for authorization
             
         Returns:
             Stage 1 with document ID
         """
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
@@ -90,9 +117,6 @@ class ProjectService:
                 temp_file.write(content)
 
             try:
-                # Initialize RAG service
-                await rag_service.initialize()
-
                 # Ingest PDF using directory reader and get document ID
                 parent_doc_id = await rag_service.ingest_documents_from_directory(
                     temp_dir,
@@ -109,19 +133,20 @@ class ProjectService:
                 raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
     @staticmethod
-    async def analyze_document(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
+    async def analyze_document(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> Stage:
         """
         Stage 1 - Part 2: Generate analysis for the uploaded document.
         
         Args:
             db: Database session
             project_id: Project ID
+            user_id: User ID for authorization
             
         Returns:
             Stage 1 with analysis
         """
         # Get project and validate document ID
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -129,8 +154,7 @@ class ProjectService:
             raise HTTPException(status_code=400, detail="No document uploaded. Please upload a document first.")
 
         try:
-            # Initialize RAG service and create query engine
-            await rag_service.initialize()
+            # Create query engine
             query_engine = await rag_service.create_document_query_engine(project.document_id)
             
             # Create tools for the agent
@@ -175,12 +199,12 @@ class ProjectService:
             raise HTTPException(status_code=500, detail=f"Error analyzing document: {str(e)}")
 
     @staticmethod
-    async def process_stage_2(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
+    async def process_stage_2(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> Stage:
         """
         Process stage 2: Generate problem statements based on analysis.
         """
         # Get project and validate stage 1
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -192,8 +216,7 @@ class ProjectService:
         if not analysis:
             raise HTTPException(status_code=400, detail="Stage 1 analysis is missing")
             
-        # Initialize RAG service and create query engine with stage-specific parser
-        await rag_service.initialize()
+        # Create query engine with stage-specific parser
         query_engine = await rag_service.create_document_query_engine(
             project.document_id,
             stage_number=2
@@ -253,6 +276,7 @@ class ProjectService:
     async def process_stage_3(
         db: AsyncIOMotorDatabase, 
         project_id: str,
+        user_id: str,
         selected_problem_id: Optional[str] = None,
         custom_problem: Optional[str] = None
     ) -> Stage:
@@ -262,6 +286,7 @@ class ProjectService:
         Args:
             db: Database session
             project_id: Project ID
+            user_id: User ID for authorization
             selected_problem_id: ID of a problem selected from stage 2 (mutually exclusive with custom_problem)
             custom_problem: New problem statement as string (mutually exclusive with selected_problem_id)
             
@@ -269,7 +294,7 @@ class ProjectService:
             Updated stage 3 data
         """
         # Get project and validate prior stages
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -340,8 +365,7 @@ class ProjectService:
                 stage_data
             )
             
-        # Initialize RAG service and create query engine with stage-specific parser
-        await rag_service.initialize()
+        # Create query engine with stage-specific parser
         query_engine = await rag_service.create_document_query_engine(
             project.document_id,
             stage_number=3
@@ -389,7 +413,8 @@ class ProjectService:
     async def process_stage_4(
         db: AsyncIOMotorDatabase, 
         project_id: str,
-        chosen_solution_id: str
+        chosen_solution_id: str,
+        user_id: str
     ) -> Dict:
         """
         Process stage 4: Update chosen solution and return formatted data.
@@ -398,12 +423,13 @@ class ProjectService:
             db: Database session
             project_id: Project ID
             chosen_solution_id: ID of the solution chosen by the user
+            user_id: User ID for authorization
             
         Returns:
             Dictionary containing formatted project data
         """
         # Get project and validate all prior stages
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             

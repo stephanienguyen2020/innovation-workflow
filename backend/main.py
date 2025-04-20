@@ -1,3 +1,4 @@
+from app.middleware.log import APIGatewayMiddleware
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.constant.config import SECRET_KEY
@@ -44,7 +45,7 @@ app.add_middleware(
 
 # Add session middleware for managing server-side sessions
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
-
+app.add_middleware(APIGatewayMiddleware)
 # Add a basic health check endpoint
 @app.get("/health")
 async def health_check():

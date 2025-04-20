@@ -48,15 +48,13 @@ export default function LoginPage() {
     }
 
     try {
-      const userData = await login(email, password);
+      await login(email, password);
 
       // Get the redirect URL from query params, or default to "/"
       const redirectTo = searchParams.get("redirect") || "/";
 
-      // Add a small delay to ensure the AuthContext state updates before navigation
-      setTimeout(() => {
-        router.push(redirectTo);
-      }, 100);
+      // Use window.location.href for a full page reload after login
+      window.location.href = redirectTo;
     } catch (err) {
       setError("Invalid email or password");
     }

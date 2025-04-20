@@ -41,7 +41,7 @@ export default function NewProject() {
     // Log user information to help with debugging
     console.log("Current user:", user);
 
-    if (!user || !user.id) {
+    if (!user) {
       setError("User not authenticated. Please log in again.");
       return;
     }
@@ -67,7 +67,7 @@ export default function NewProject() {
       }
 
       // Direct fetch to the backend API instead of going through Next.js API routes
-      const backendUrl = `${API_URL}/api/projects/?user_id=${user.id}`;
+      const backendUrl = `${API_URL}/api/projects`;
       console.log("Fetching directly from backend:", backendUrl);
 
       const response = await fetch(backendUrl, {
