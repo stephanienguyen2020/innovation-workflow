@@ -18,6 +18,15 @@ interface ProblemStatement {
   is_custom?: boolean;
 }
 
+interface Stage {
+  stage_number: number;
+  status: string;
+  data: {
+    analysis?: string;
+    [key: string]: any;
+  };
+}
+
 export default function IdeationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -115,16 +124,44 @@ export default function IdeationPage() {
         }
 
         // 3. Fetch research summary from stage 1
-        const researchResponse = await fetch(
-          `/api/projects/${projectId}/stages/1`
-        );
+        try {
+          console.log(`Fetching stage 1 data for project: ${projectId}`);
+          // Use the correct endpoint for stage 1
+          const researchResponse = await fetch(
+            `/api/projects/${projectId}/stages/1`
+          );
 
-        if (researchResponse.ok) {
-          const researchData = await researchResponse.json();
+          if (researchResponse.ok) {
+            const stageData = await researchResponse.json();
+            console.log("Stage 1 data:", stageData);
 
-          if (researchData && researchData.data && researchData.data.analysis) {
-            setResearchSummary(researchData.data.analysis);
+            if (stageData && stageData.data && stageData.data.analysis) {
+              console.log(
+                "Found analysis in stage data: ",
+                stageData.data.analysis.substring(0, 100) + "..."
+              );
+              setResearchSummary(stageData.data.analysis);
+            } else {
+              console.warn("No analysis found in stage data:", stageData);
+              setResearchSummary(
+                "Analysis not available. Please complete research upload first."
+              );
+            }
+          } else {
+            console.error(
+              "Failed to fetch stage 1 data, status:",
+              researchResponse.status
+            );
+            setResearchSummary(
+              "Research summary could not be loaded. Status: " +
+                researchResponse.status
+            );
           }
+        } catch (researchErr) {
+          console.error("Error fetching research summary:", researchErr);
+          setResearchSummary(
+            "Error loading research summary: " + (researchErr as Error).message
+          );
         }
       } catch (err) {
         console.error("Error fetching data:", err);
@@ -228,12 +265,18 @@ export default function IdeationPage() {
               Modify Research
             </button>
           </div>
-          <p className="text-gray-600 text-xl">
-            {researchSummary
-              ? researchSummary.substring(0, 200) +
-                (researchSummary.length > 200 ? "..." : "")
-              : "No research summary available"}
-          </p>
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[150px]">
+            {researchSummary ? (
+              <p className="text-gray-600 text-xl">{researchSummary}</p>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-32">
+                <p className="text-gray-500 text-lg">
+                  No research summary available. Please upload research
+                  documents first.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Generated Ideas Section */}
