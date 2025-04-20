@@ -104,7 +104,7 @@ export default function UploadPage() {
 
     try {
       // Upload directly to the backend (not through Next.js API route)
-      const backendUrl = `${API_URL}/projects/${projectId}/stages/1/upload`;
+      const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/upload`;
       console.log(`Uploading file directly to backend: ${backendUrl}`);
 
       const response = await fetch(backendUrl, {
@@ -198,7 +198,7 @@ export default function UploadPage() {
       await delay(5000);
 
       // Call the Stage 1 Part 2 API endpoint with retries
-      const backendUrl = `${API_URL}/projects/${projectId}/stages/1/generate`;
+      const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/generate`;
       console.log("Generating analysis using:", backendUrl);
 
       let retries = 3;
