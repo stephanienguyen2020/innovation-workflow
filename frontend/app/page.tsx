@@ -2,10 +2,21 @@
 
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function WelcomeScreen() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
+
+  // Add a useEffect to force component update when user state changes
+  useEffect(() => {
+    // This is just a dependency effect to ensure the component re-renders
+    // when the user state changes
+    console.log(
+      "User state in WelcomeScreen:",
+      user ? "logged in" : "not logged in"
+    );
+  }, [user]);
 
   const handleStartNewClick = () => {
     if (!user) {

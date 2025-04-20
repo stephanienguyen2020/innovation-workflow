@@ -2,34 +2,56 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { useAuth } from "@/context/AuthContext";
 
 export default function WorkflowPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  // First ensure component is mounted to prevent hydration issues
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
-    const storedProjectId = localStorage.getItem("currentProjectId");
-    const storedProblem = localStorage.getItem("currentProblem");
+    // Skip this effect if not mounted yet
+    if (!mounted) return;
 
-    console.log("Retrieved from localStorage - Project ID:", storedProjectId);
-    console.log("Retrieved from localStorage - Problem:", storedProblem);
-
-    if (!storedProjectId) {
-      // Redirect to new project page if no project ID is found
-      console.warn("No project ID found in localStorage, redirecting to /new");
-      router.push("/new");
+    // If user is not authenticated after loading, redirect to login
+    if (!authLoading && !user) {
+      router.push("/login?redirect=/workflow");
       return;
     }
 
-    setProjectId(storedProjectId);
-    setProblem(storedProblem);
-    setIsLoading(false);
-  }, [router]);
+    // Only proceed with localStorage checks after mounting and if authenticated
+    if (mounted && user) {
+      const storedProjectId = localStorage.getItem("currentProjectId");
+      const storedProblem = localStorage.getItem("currentProblem");
 
-  // If loading, show a loading state
-  if (isLoading) {
+      console.log("Retrieved from localStorage - Project ID:", storedProjectId);
+      console.log("Retrieved from localStorage - Problem:", storedProblem);
+
+      if (!storedProjectId) {
+        // Redirect to new project page if no project ID is found
+        console.warn(
+          "No project ID found in localStorage, redirecting to /new"
+        );
+        router.push("/new");
+        return;
+      }
+
+      setProjectId(storedProjectId);
+      setProblem(storedProblem);
+      setIsLoading(false);
+    }
+  }, [router, user, authLoading, mounted]);
+
+  // If not mounted or still loading, show a safe loading state
+  if (!mounted || isLoading || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-xl">Loading workflow...</p>

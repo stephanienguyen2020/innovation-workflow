@@ -160,6 +160,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Store user data in localStorage for persistence
       saveUserToStorage(userData);
 
+      // Ensure the state update completes
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
       // Return the user data in case it's needed
       return userData;
     } catch (error) {

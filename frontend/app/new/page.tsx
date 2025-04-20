@@ -17,15 +17,20 @@ export default function NewProject() {
   const [showWarning, setShowWarning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [mounted, setMounted] = useState(false);
+
+  // First, ensure the component is properly mounted to prevent hydration issues
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Check if user is authenticated when the component loads
   useEffect(() => {
-    if (!loading && !user) {
+    if (mounted && !loading && !user) {
       console.warn("User not authenticated, redirecting to login");
-      // You can redirect to login page here if needed
-      // router.push("/login");
+      router.push("/login?redirect=/new");
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, mounted]);
 
   const handleStartWorkflow = async () => {
     if (!problem.trim()) {
@@ -125,6 +130,11 @@ export default function NewProject() {
       setError("");
     }
   };
+
+  // If not mounted yet, don't render anything to prevent hydration mismatch
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <ProtectedRoute>
