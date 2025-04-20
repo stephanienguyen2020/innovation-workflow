@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Path, Query, Body
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from app.database.database import get_db
 from app.schema.project import Project, Stage, ProjectCreate
@@ -31,13 +31,41 @@ async def create_project(
     """
     return await project_service.create_project(db, user_id, project_data.problem_domain)
 
+@router.get("/", response_model=List[Project])
+async def get_user_projects(
+    user_id: str = Query(..., description="User ID"),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+) -> List[Project]:
+    """
+    Get all projects belonging to a specific user.
+    
+    Args:
+        user_id: ID of the user
+        db: Database connection
+    
+    Returns:
+        List of projects belonging to the user
+    """
+    return await project_service.get_user_projects(db, user_id)
+
 @router.get("/{project_id}", response_model=Project)
 async def get_project(
     project_id: str = Path(..., description="Project ID"),
+    user_id: str = Query(..., description="User ID"),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> Project:
-    """Get project by ID."""
-    return await project_service.get_project(db, project_id)
+    """
+    Get project by ID, validating that it belongs to the specified user.
+    
+    Args:
+        project_id: Project ID
+        user_id: User ID for ownership validation
+        db: Database connection
+    
+    Returns:
+        Project if found and belongs to the user
+    """
+    return await project_service.get_project_by_id(db, project_id, user_id)
 
 @router.get("/{project_id}/stages/{stage_number}", response_model=Stage)
 async def get_project_stage(

@@ -32,11 +32,54 @@ async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain:
     await db.projects.insert_one(project.dict(by_alias=True))
     return project
 
-async def get_project(db: AsyncIOMotorDatabase, project_id: str) -> Optional[Project]:
-    project = await db.projects.find_one({"_id": ObjectId(project_id)})
+async def get_project(db: AsyncIOMotorDatabase, project_id: str, user_id: str = None) -> Optional[Project]:
+    """
+    Get project by ID with optional user validation.
+    
+    Args:
+        db: Database session
+        project_id: Project ID
+        user_id: Optional user ID to validate project ownership
+        
+    Returns:
+        Project if found and (user_id is None or matches project's user_id)
+        
+    Raises:
+        HTTPException: If project not found or doesn't belong to specified user
+    """
+    query = {"_id": ObjectId(project_id)}
+    
+    # Add user_id to query if provided
+    if user_id:
+        query["user_id"] = ObjectId(user_id)
+    
+    project = await db.projects.find_one(query)
+    
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        if user_id:
+            # We don't reveal whether the project exists or just doesn't belong to user
+            raise HTTPException(status_code=404, detail="Project not found or doesn't belong to you")
+        else:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
     return Project(**project)
+
+async def get_projects_by_user_id(db: AsyncIOMotorDatabase, user_id: str) -> List[Project]:
+    """
+    Get all projects for a specific user.
+    
+    Args:
+        db: Database session
+        user_id: User ID to filter projects by
+        
+    Returns:
+        List of projects belonging to the user
+    """
+    cursor = db.projects.find({"user_id": ObjectId(user_id)})
+    projects = []
+    async for project in cursor:
+        projects.append(Project(**project))
+    return projects
 
 async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: str) -> Project:
     """

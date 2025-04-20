@@ -10,14 +10,15 @@ from bson import ObjectId
 
 from app.database.query.db_project import (
     create_project,
-    get_project,
+    get_project as db_get_project,
+    get_projects_by_user_id,
     get_project_pdf_data,
     get_stage,
     update_stage_1,
     update_stage_2,
     update_stage_3,
     update_stage_4,
-    update_document_id
+    update_document_id,
 )
 from app.schema.project import Project, Stage, Stage1Data
 from app.services.rag_service import rag_service
@@ -42,9 +43,33 @@ class ProjectService:
         return await create_project(db, user_id, problem_domain)
 
     @staticmethod
-    async def get_project(db: AsyncIOMotorDatabase, project_id: str) -> Project:
-        """Get project by ID."""
-        return await get_project(db, project_id)
+    async def get_user_projects(db: AsyncIOMotorDatabase, user_id: str) -> List[Project]:
+        """
+        Get all projects belonging to a specific user.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            
+        Returns:
+            List of projects belonging to the user
+        """
+        return await get_projects_by_user_id(db, user_id)
+
+    @staticmethod
+    async def get_project_by_id(db: AsyncIOMotorDatabase, project_id: str, user_id: str = None) -> Project:
+        """
+        Get project by ID with optional user validation.
+        
+        Args:
+            db: Database session
+            project_id: Project ID
+            user_id: Optional user ID to validate project ownership
+            
+        Returns:
+            Project if found and belongs to user (if user_id provided)
+        """
+        return await db_get_project(db, project_id, user_id)
 
     @staticmethod
     async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int) -> Stage:
@@ -105,7 +130,7 @@ class ProjectService:
             Stage 1 with analysis
         """
         # Get project and validate document ID
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -155,7 +180,7 @@ class ProjectService:
             Updated stage 2 data
         """
         # Get project and validate stage 1
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -229,7 +254,7 @@ class ProjectService:
             Updated stage 3 data
         """
         # Get project and validate prior stages
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -362,7 +387,7 @@ class ProjectService:
             Dictionary containing formatted project data
         """
         # Get project and validate all prior stages
-        project = await get_project(db, project_id)
+        project = await db_get_project(db, project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
