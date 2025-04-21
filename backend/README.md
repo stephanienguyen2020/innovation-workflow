@@ -124,4 +124,15 @@ cd innovation-workflow
 python3 -m venv env
 source env/bin/activate
 pip install -r requirements.txt
+
+
+
+# Add 4GB swap
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+# Verify swap
+free -h
 ```
