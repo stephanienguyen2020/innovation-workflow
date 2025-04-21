@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import List, Optional, Dict
 import uuid
 from bson import ObjectId
+from pydantic import BaseModel, Field
 
 from app.database.query.db_project import (
     create_project,
@@ -19,12 +20,20 @@ from app.database.query.db_project import (
     update_stage_3,
     update_stage_4,
     update_document_id,
+    delete_all_data
 )
 from app.schema.project import Project, Stage, Stage1Data
 from app.services.rag_service import rag_service
 from app.services.agent_service import agent_service
 from app.constant.status import StageStatus
 from app.prompts.assistant import ProjectPrompts
+
+# Simplified Pydantic model for analysis
+class DocumentAnalysis(BaseModel):
+    content: str = Field(..., description="Concise analysis paragraph about the document")
+
+class AnalysisResponse(BaseModel):
+    analysis: DocumentAnalysis
 
 class ProjectService:
     @staticmethod
@@ -72,12 +81,13 @@ class ProjectService:
         return await db_get_project(db, project_id, user_id)
 
     @staticmethod
-    async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int) -> Stage:
+    async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int, user_id: str) -> Stage:
         """Get specific stage of a project."""
-        return await get_stage(db, project_id, stage_number)
+        project = await db_get_project(db, project_id, user_id)
+        return next((stage for stage in project.stages if stage.stage_number == stage_number), None)
 
     @staticmethod
-    async def upload_document(db: AsyncIOMotorDatabase, project_id: str, file: UploadFile) -> Stage:
+    async def upload_document(db: AsyncIOMotorDatabase, project_id: str, file: UploadFile, user_id: str) -> Stage:
         """
         Stage 1 - Part 1: Upload PDF and store document ID.
         
@@ -85,10 +95,15 @@ class ProjectService:
             db: Database session
             project_id: Project ID
             file: Uploaded PDF file
+            user_id: User ID for authorization
             
         Returns:
             Stage 1 with document ID
         """
+        project = await db_get_project(db, project_id, user_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
         if not file.filename.endswith('.pdf'):
             raise HTTPException(status_code=400, detail="File must be a PDF")
 
@@ -118,19 +133,20 @@ class ProjectService:
                 raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
     @staticmethod
-    async def analyze_document(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
+    async def analyze_document(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> Stage:
         """
         Stage 1 - Part 2: Generate analysis for the uploaded document.
         
         Args:
             db: Database session
             project_id: Project ID
+            user_id: User ID for authorization
             
         Returns:
             Stage 1 with analysis
         """
         # Get project and validate document ID
-        project = await db_get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -143,24 +159,39 @@ class ProjectService:
             
             # Create tools for the agent
             tools = agent_service.create_document_analysis_tools(query_engine, stage_number=1)
-
-            # Create agent and run analysis with problem domain context
+            
+            # Create agent and run analysis
             agent = agent_service.create_agent(tools)
-            analysis = await agent_service.run_analysis(
+            response = await agent_service.run_analysis(
                 agent,
                 ProjectPrompts.STAGE_1_ANALYSIS,
                 context={
                     "problem_domain": project.problem_domain
                 }
             )
-
-            # Update stage 1 with analysis and mark as completed
-            updated_project = await update_stage_1(
-                db, 
-                project_id, 
-                analysis=analysis
-            )
-            return updated_project.stages[0]
+            
+            try:
+                # Parse and validate the response using Pydantic
+                if isinstance(response, str):
+                    response_dict = json.loads(response)
+                else:
+                    response_dict = response
+                    
+                analysis_response = AnalysisResponse(**response_dict)
+                
+                # Update stage 1 with the analysis paragraph
+                updated_project = await update_stage_1(
+                    db, 
+                    project_id, 
+                    analysis=analysis_response.analysis.content
+                )
+                return updated_project.stages[0]
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Invalid response format from agent: {str(e)}"
+                )
 
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -168,19 +199,12 @@ class ProjectService:
             raise HTTPException(status_code=500, detail=f"Error analyzing document: {str(e)}")
 
     @staticmethod
-    async def process_stage_2(db: AsyncIOMotorDatabase, project_id: str) -> Stage:
+    async def process_stage_2(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> Stage:
         """
         Process stage 2: Generate problem statements based on analysis.
-        
-        Args:
-            db: Database session
-            project_id: Project ID
-            
-        Returns:
-            Updated stage 2 data
         """
         # Get project and validate stage 1
-        project = await db_get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -211,12 +235,24 @@ class ProjectService:
                 "problem_domain": project.problem_domain
             }
         )
+        print("Agent response for problem statements:", response)
         
         try:
-            # The response should already be in structured format
+            # Handle different response formats
+            if isinstance(response, str) and "Sorry, I can't assist with that" in response:
+                raise HTTPException(status_code=500, detail="Failed to generate problem statements")
+                
+            # Parse the response into structured format
             problem_data = response if isinstance(response, dict) else json.loads(response)
             
-            # Format stage data properly with problem_statements
+            # Validate problem statements structure
+            if not problem_data.get("problem_statements") or not isinstance(problem_data["problem_statements"], list):
+                raise HTTPException(
+                    status_code=500,
+                    detail="Invalid problem statements format received from agent"
+                )
+            
+            # Format stage data
             stage_data = {
                 "problem_statements": problem_data["problem_statements"],
                 "custom_problems": []  # Initialize empty custom problems list
@@ -228,7 +264,9 @@ class ProjectService:
                 stage_data
             )
             return next(stage for stage in updated_project.stages if stage.stage_number == 2)
+            
         except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error processing response: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Invalid response format from agent: {str(e)}"
@@ -238,6 +276,7 @@ class ProjectService:
     async def process_stage_3(
         db: AsyncIOMotorDatabase, 
         project_id: str,
+        user_id: str,
         selected_problem_id: Optional[str] = None,
         custom_problem: Optional[str] = None
     ) -> Stage:
@@ -247,6 +286,7 @@ class ProjectService:
         Args:
             db: Database session
             project_id: Project ID
+            user_id: User ID for authorization
             selected_problem_id: ID of a problem selected from stage 2 (mutually exclusive with custom_problem)
             custom_problem: New problem statement as string (mutually exclusive with selected_problem_id)
             
@@ -254,7 +294,7 @@ class ProjectService:
             Updated stage 3 data
         """
         # Get project and validate prior stages
-        project = await db_get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -373,7 +413,8 @@ class ProjectService:
     async def process_stage_4(
         db: AsyncIOMotorDatabase, 
         project_id: str,
-        chosen_solution_id: str
+        chosen_solution_id: str,
+        user_id: str
     ) -> Dict:
         """
         Process stage 4: Update chosen solution and return formatted data.
@@ -382,12 +423,13 @@ class ProjectService:
             db: Database session
             project_id: Project ID
             chosen_solution_id: ID of the solution chosen by the user
+            user_id: User ID for authorization
             
         Returns:
             Dictionary containing formatted project data
         """
         # Get project and validate all prior stages
-        project = await db_get_project(db, project_id)
+        project = await db_get_project(db, project_id, user_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
@@ -452,6 +494,31 @@ class ProjectService:
             raise HTTPException(
                 status_code=400,
                 detail=str(e)
+            )
+
+    @staticmethod
+    async def delete_all_data(db: AsyncIOMotorDatabase) -> Dict[str, int]:
+        """
+        Delete all documents from both rag_documents and projects collections.
+        
+        Args:
+            db: Database session
+            
+        Returns:
+            Dictionary containing count of deleted documents from each collection
+        """
+        try:
+            # Delete all data from collections
+            result = await delete_all_data(db)
+            
+            # Reset RAG service state
+            await rag_service.initialize()
+            
+            return result
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error deleting data: {str(e)}"
             )
 
 # Create singleton instance

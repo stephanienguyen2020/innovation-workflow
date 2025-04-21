@@ -1,88 +1,115 @@
 class ProjectPrompts:
     STAGE_1_ANALYSIS = """
-    Analyze the uploaded PDF and summarize its key points, main topics, 
-    and any relevant information that can help in understanding the context 
-    of the document. Provide a concise analysis of what the document is about.
-    
-    Context from previous stage:
-    Problem Domain: {problem_domain}
-    
-    Return your response in a clear, well-structured paragraph.
-    """
+{% chat role="system" %}
+Always answer the question, even if the context isn't helpful.
+{% endchat %}
+
+You are an expert document analyst. Your task is to analyze the provided document and create a concise analysis paragraph.
+
+Required queries to make:
+1. "What is the main content and key problems discussed in the document?"
+2. "What are the key solutions or recommendations presented?"
+3. "What is the overall quality and structure of the document?"
+
+Format your response EXACTLY as follows:
+{
+    "analysis": {
+        "content": "A single, well-written paragraph that covers:
+                    - What the document is about
+                    - The main problems it addresses
+                    - Key solutions or recommendations
+                    - Brief comment on document quality/structure"
+    }
+}
+
+IMPORTANT:
+- Keep the analysis to one clear paragraph
+- Focus on the most important points
+- Use professional language
+- Base everything on the actual document content
+"""
 
     STAGE_2_PROBLEMS = """
-    You are an expert problem analyst. Based on the provided analysis of the uploaded PDF, generate exactly four problem statements.
-    Each problem statement must be clear, relevant, and align with the analysis content.
+{% chat role="system" %}
+Always answer the question, even if the context isn't helpful.
+{% endchat %}
 
-    Follow this Pydantic model structure exactly:
+You are an expert problem analyst. Based on the provided analysis of the uploaded PDF, generate exactly four problem statements.
+Each problem statement must be clear, relevant, and align with the analysis content.
 
-    class ProblemStatement:
-        problem: str  # A clear, concise statement of the problem
-        explanation: str  # Detailed explanation connecting to the analysis
+Follow this Pydantic model structure exactly:
 
-    class Stage2Output:
-        problem_statements: List[ProblemStatement]  # Exactly 4 problem statements
+class ProblemStatement:
+    problem: str  # A clear, concise statement of the problem
+    explanation: str  # Detailed explanation connecting to the analysis
 
-    Requirements:
-    1. Each problem statement must be unique and actionable
-    2. Each explanation must reference specific points from the analysis
-    3. Problems should be ordered by priority/impact
-    4. Use professional, clear language
+class Stage2Output:
+    problem_statements: List[ProblemStatement]  # Exactly 4 problem statements
 
-    Context from previous stage:
-        Problem Domain: {problem_domain}
-        Analysis: {analysis}
+Requirements:
+1. Each problem statement must be unique and actionable
+2. Each explanation must reference specific points from the analysis
+3. Problems should be ordered by priority/impact
+4. Use professional, clear language
 
-    Return ONLY valid JSON matching the Pydantic model structure above, in this format:
-    {
-        "problem_statements": [
-            {
-                "problem": "Clear problem statement 1",
-                "explanation": "Detailed explanation of the problem and its context"
-            },
-            // ... repeat for all 4 problems
-        ]
-    }
+Context from previous stage:
+    Problem Domain: {problem_domain}
+    Analysis: {analysis}
+
+Return ONLY valid JSON matching the Pydantic model structure above, in this format:
+{
+    "problem_statements": [
+        {
+            "problem": "Clear problem statement 1",
+            "explanation": "Detailed explanation of the problem and its context"
+        },
+        // ... repeat for all 4 problems
+    ]
+}
     """
 
     STAGE_3_IDEAS = """
-    You are an expert product innovator in {problem_domain}. Using the analysis from Stage 1 and problem statements from Stage 2, 
-    generate exactly three product ideas that solve the identified problems.
+{% chat role="system" %}
+Always answer the question, even if the context isn't helpful.
+{% endchat %}
 
-    Follow this Pydantic model structure exactly:
+You are an expert product innovator in {problem_domain}. Using the analysis from Stage 1 and problem statements from Stage 2, 
+generate exactly three product ideas that solve the identified problems.
 
-    class ProductIdea:
-        idea: str  # Clear product name/title
-        detailed_explanation: str  # Comprehensive solution explanation
+Follow this Pydantic model structure exactly:
 
-    class Stage3Output:
-        product_ideas: List[ProductIdea]  # Exactly 3 product ideas
+class ProductIdea:
+    idea: str  # Clear product name/title
+    detailed_explanation: str  # Comprehensive solution explanation
 
-    Requirements:
-    1. Each idea must directly address one or more problem statements
-    2. Detailed explanation must include:
-       - Which problem(s) it solves
-       - Potential impact
-       - Implementation feasibility
-    3. Ideas should be innovative yet practical
-    4. Use professional, clear language
+class Stage3Output:
+    product_ideas: List[ProductIdea]  # Exactly 3 product ideas
 
-    Context from previous stages:
-    Problem Domain: {problem_domain}
-    Analysis: {analysis}
-    Problem Statements: {problem_statements}
+Requirements:
+1. Each idea must directly address one or more problem statements
+2. Detailed explanation must include:
+    - Which problem(s) it solves
+    - Potential impact
+    - Implementation feasibility
+3. Ideas should be innovative yet practical
+4. Use professional, clear language
 
-    Return ONLY valid JSON matching the Pydantic model structure above, in this format:
-    {
-        "product_ideas": [
-            {
-                "idea": "Clear product idea name/title",
-                "detailed_explanation": "Comprehensive explanation including how it solves the problem, potential impact, and feasibility"
-            },
-            // ... repeat for all 3 ideas
-        ]
-    }
-    """
+Context from previous stages:
+Problem Domain: {problem_domain}
+Analysis: {analysis}
+Problem Statements: {problem_statements}
+
+Return ONLY valid JSON matching the Pydantic model structure above, in this format:
+{
+    "product_ideas": [
+        {
+            "idea": "Clear product idea name/title",
+            "detailed_explanation": "Comprehensive explanation including how it solves the problem, potential impact, and feasibility"
+        },
+        // ... repeat for all 3 ideas
+    ]
+}
+"""
 
     STAGE_4_FINAL = """
     Based on the data from all prior stages, generate a finalized document that includes 

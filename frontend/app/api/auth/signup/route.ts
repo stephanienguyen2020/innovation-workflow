@@ -1,34 +1,80 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function POST(request: NextRequest) {
   try {
     // Parse the request body
     const body = await request.json();
-    const { name, email, password } = body;
+    const { first_name, last_name, email, password, role } = body;
 
     // Basic validation
-    if (!name || !email || !password) {
+    if (!first_name || !last_name || !email || !password) {
       return NextResponse.json(
-        { detail: "Name, email, and password are required" },
+        { detail: "First name, last name, email, and password are required" },
         { status: 400 }
       );
     }
 
-    // Mock signup - in a real app, you would store this in a database
-    const user = {
-      userId: "123",
-      username: email,
-      name: name,
+    // Prepare the user data matching UserCreate model from backend
+    const userData = {
+      first_name,
+      last_name,
+      email,
+      password,
+      role: role || "user",
     };
 
-    return NextResponse.json(
-      {
-        access_token: "mock_token",
-        token_type: "bearer",
-        user: user,
+    console.log("Sending signup data:", JSON.stringify(userData));
+
+    const signupUrl = `${API_URL}/signup`;
+    console.log("Calling API endpoint:", signupUrl);
+
+    // Call the backend API
+    const response = await fetch(signupUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-      { status: 200 }
-    );
+      body: JSON.stringify(userData),
+    });
+
+    const data = await response.json();
+    console.log("Signup response status:", response.status);
+    console.log("Signup response body:", JSON.stringify(data));
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { detail: data.detail || data.message || "Signup failed" },
+        { status: response.status }
+      );
+    }
+
+    // Format user data for the client
+    const userDataForClient = {
+      id: data.user_id,
+      name: `${first_name} ${last_name}`.trim(),
+      email: email,
+      access_token: data.access_token,
+      token_type: data.token_type,
+    };
+
+    // Set cookie with access token if available
+    const responseObj = NextResponse.json(userDataForClient);
+
+    if (data.access_token) {
+      responseObj.cookies.set({
+        name: "access_token",
+        value: data.access_token,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        path: "/",
+      });
+    }
+
+    return responseObj;
   } catch (error) {
     console.error("Signup error:", error);
     return NextResponse.json(

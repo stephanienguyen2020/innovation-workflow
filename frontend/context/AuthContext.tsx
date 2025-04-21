@@ -1,18 +1,37 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
 import {
-  User,
-  getCurrentUser,
-  login as authLogin,
-  logout as authLogout,
-  signup as authSignup,
-} from "@/lib/auth";
-import { useRouter, useSearchParams } from "next/navigation";
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 
-interface AuthContextType {
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+};
+
+type LoginResponse = {
+  userId: string;
+  name: string;
+  email: string;
+  access_token: string;
+};
+
+type StoredUserData = {
+  userId: string;
+  name: string;
+  email: string;
+  access_token: string;
+  token_type: string;
+};
+
+type AuthContextType = {
   user: User | null;
-  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (
     firstName: string,
@@ -21,32 +40,145 @@ interface AuthContextType {
     password: string
   ) => Promise<void>;
   logout: () => Promise<void>;
-}
+  loading: boolean;
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+// Create a key for localStorage
+const USER_STORAGE_KEY = "innovation_workflow_user";
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const searchParams = useSearchParams();
+
+  // Function to retrieve user from localStorage
+  const getUserFromStorage = () => {
+    try {
+      if (typeof window !== "undefined") {
+        const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+        if (storedUser) {
+          const userData = JSON.parse(storedUser) as StoredUserData;
+          // Return just the user data portion
+          return {
+            id: userData.userId,
+            name: userData.name,
+            email: userData.email,
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error retrieving user from storage:", error);
+    }
+    return null;
+  };
+
+  // Function to save user data and token to localStorage
+  const saveUserToStorage = (loginResponse: LoginResponse) => {
+    try {
+      if (typeof window !== "undefined") {
+        console.log("Saving user to storage:", loginResponse);
+        // Store both user data and access token
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
+          userId: loginResponse.userId,
+          name: loginResponse.name,
+          email: loginResponse.email,
+          access_token: loginResponse.access_token,
+          token_type: "bearer"
+        } as StoredUserData));
+      }
+    } catch (error) {
+      console.error("Error saving user to storage:", error);
+    }
+  };
+
+  // Function to clear user from localStorage
+  const clearUserFromStorage = () => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(USER_STORAGE_KEY);
+      }
+    } catch (error) {
+      console.error("Error clearing user from storage:", error);
+    }
+  };
 
   useEffect(() => {
-    // Check if user is already logged in
-    const currentUser = getCurrentUser();
-    setUser(currentUser);
-    setLoading(false);
+    // Check if user is logged in on initial load
+    const checkUserLoggedIn = async () => {
+      try {
+        // Always try to get user from localStorage first
+        const storedUser = getUserFromStorage();
+        if (storedUser) {
+          console.log("Found user in localStorage:", storedUser);
+          setUser(storedUser);
+        }
+
+        // Just check if token is valid
+        const response = await fetch("/api/auth/me");
+
+        if (!response.ok) {
+          // Server returned error
+          console.warn("Server session validation failed:", response.status);
+          setUser(null);
+          clearUserFromStorage();
+        }
+      } catch (error) {
+        console.error("Authentication check failed:", error);
+        // On error, clear user data
+        setUser(null);
+        clearUserFromStorage();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkUserLoggedIn();
   }, []);
 
   const login = async (email: string, password: string) => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const user = await authLogin(email, password);
-      setUser(user);
+      // Create FormData for login
+      const formData = new FormData();
+      formData.append("username", email); // Backend expects "username" field
+      formData.append("password", password);
 
-      // Handle redirect if present
-      const redirect = searchParams.get("redirect");
-      router.push(redirect || "/");
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Login failed");
+      }
+
+      const data = await response.json();
+      console.log("Login successful, response data:", data);
+
+      // Create login response object with both user data and token
+      const loginResponse: LoginResponse = {
+        userId: data.userId,
+        name: data.name,
+        email: data.email,
+        access_token: data.access_token
+      };
+
+      // Set the user state (only with user info, not token)
+      setUser({
+        id: loginResponse.userId,
+        name: loginResponse.name,
+        email: loginResponse.email
+      });
+
+      // Store complete login response including token in localStorage
+      saveUserToStorage(loginResponse);
+
+      // Ensure the state update completes
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } catch (error) {
+      console.error("Login error:", error);
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -58,32 +190,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     password: string
   ) => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const user = await authSignup(firstName, lastName, email, password);
-      setUser(user);
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          password,
+          role: "user",
+        }),
+      });
 
-      // Handle redirect if present
-      const redirect = searchParams.get("redirect");
-      router.push(redirect || "/");
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error("Signup failed:", {
+          status: response.status,
+          statusText: response.statusText,
+          data,
+        });
+        throw new Error(
+          data.detail || "Failed to create account. Please try again."
+        );
+      }
+
+      // Return the response data instead of setting the user
+      return data;
+    } catch (error) {
+      console.error("Signup error:", error);
+      throw error;
     } finally {
       setLoading(false);
     }
   };
 
   const logout = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      await authLogout();
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+
+      // Clear user state and localStorage
       setUser(null);
-      router.push("/");
+      clearUserFromStorage();
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Even if the logout API fails, clear the local user state
+      setUser(null);
+      clearUserFromStorage();
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

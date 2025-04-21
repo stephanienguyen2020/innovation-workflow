@@ -1,29 +1,46 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "../../context/AuthContext";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [redirectMessage, setRedirectMessage] = useState("");
-  const { login, loading } = useAuth();
+  const [successMessage, setSuccessMessage] = useState("");
+  const { login, loading, user } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Add a useEffect to check if user is already logged in when the component mounts
+  useEffect(() => {
+    if (user && !loading) {
+      const redirectTo = searchParams.get("redirect") || "/";
+      router.push(redirectTo);
+    }
+  }, [user, loading, router, searchParams]);
 
   useEffect(() => {
     // Check if redirected from a protected page
     const redirect = searchParams.get("redirect");
+    const message = searchParams.get("message");
+
     if (redirect) {
       setRedirectMessage("Please log in to continue");
+    }
+
+    if (message) {
+      setSuccessMessage(message);
     }
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccessMessage("");
 
     if (!email || !password) {
       setError("Please fill in all fields");
@@ -32,6 +49,12 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
+
+      // Get the redirect URL from query params, or default to "/"
+      const redirectTo = searchParams.get("redirect") || "/";
+
+      // Use window.location.href for a full page reload after login
+      window.location.href = redirectTo;
     } catch (err) {
       setError("Invalid email or password");
     }
@@ -45,6 +68,11 @@ export default function LoginPage() {
           {redirectMessage && (
             <p className="mt-2 text-center text-sm text-amber-600">
               {redirectMessage}
+            </p>
+          )}
+          {successMessage && (
+            <p className="mt-2 text-center text-sm text-green-600">
+              {successMessage}
             </p>
           )}
           {error && (

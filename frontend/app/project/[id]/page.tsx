@@ -1,8 +1,8 @@
 "use client";
 
-import { useAuth } from "@/context/AuthContext";
+import { useState, useEffect } from "react";
+import { useAuth } from "../../../context/AuthContext";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 interface ProjectFile {

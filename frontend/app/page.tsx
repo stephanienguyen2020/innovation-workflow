@@ -1,11 +1,22 @@
 "use client";
 
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function WelcomeScreen() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // If not mounted or still loading, show nothing to prevent flash
+  if (!mounted || loading) {
+    return null;
+  }
 
   const handleStartNewClick = () => {
     if (!user) {
