@@ -17,3 +17,4 @@ OAI_CONFIG_LIST.json
 
 **/__pycache__/*
 /__pycache__/*
+*.pem
