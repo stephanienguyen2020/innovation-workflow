@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDown, Rocket, Loader2 } from "lucide-react";
+import { ChevronDown, Rocket, Loader2, ArrowLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface ProblemStatement {
@@ -27,6 +27,29 @@ export default function ProblemDefinitionPage() {
   const [customExplanation, setCustomExplanation] = useState("");
   const [showWarning, setShowWarning] = useState(false);
   const [generatingProblems, setGeneratingProblems] = useState(false);
+  const [hasUploadState, setHasUploadState] = useState(false);
+
+  // Check if we have upload state saved in localStorage
+  useEffect(() => {
+    if (projectId) {
+      const savedState = localStorage.getItem(
+        `project_${projectId}_upload_state`
+      );
+      if (savedState) {
+        try {
+          const parsedState = JSON.parse(savedState);
+          if (
+            parsedState.analysis ||
+            (parsedState.uploadedFiles && parsedState.uploadedFiles.length > 0)
+          ) {
+            setHasUploadState(true);
+          }
+        } catch (error) {
+          console.error("Error checking for saved upload state:", error);
+        }
+      }
+    }
+  }, [projectId]);
 
   useEffect(() => {
     if (!projectId) {
@@ -65,7 +88,6 @@ export default function ProblemDefinitionPage() {
 
         const fetchData = await response.json();
         console.log("Problem generation successful, result:", fetchData);
-
 
         if (
           fetchData &&
@@ -155,6 +177,14 @@ export default function ProblemDefinitionPage() {
     setExpandedProblem(expandedProblem === id ? null : id);
     if (showWarning) {
       setShowWarning(false);
+    }
+  };
+
+  const handleGoBackToUpload = () => {
+    if (projectId) {
+      router.push(`/workflow/upload?projectId=${projectId}`);
+    } else {
+      router.push("/workflow");
     }
   };
 
@@ -271,6 +301,17 @@ export default function ProblemDefinitionPage() {
 
       {/* Main Content */}
       <div className="space-y-8">
+        {/* Back to upload button */}
+        {hasUploadState && (
+          <button
+            onClick={handleGoBackToUpload}
+            className="text-gray-700 hover:text-gray-900 flex items-center gap-2 mb-4"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Upload & Analysis</span>
+          </button>
+        )}
+
         <h2 className="text-4xl font-bold">Problem Definition</h2>
         <p className="text-2xl">
           select from the following problem statement or enter your own
@@ -395,13 +436,11 @@ export default function ProblemDefinitionPage() {
         {/* Bottom Actions */}
         <div className="flex flex-wrap gap-4 pt-4">
           <button
-            onClick={() =>
-              router.push(`/workflow/upload?projectId=${projectId}`)
-            }
+            onClick={handleGoBackToUpload}
             className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity"
           >
-            Add more research
+            Back to Research
           </button>
           <button
             onClick={handleGenerateIdeas}
