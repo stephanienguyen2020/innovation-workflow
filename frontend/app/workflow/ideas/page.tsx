@@ -44,6 +44,7 @@ export default function IdeationPage() {
     useState<ProblemStatement | null>(null);
   const [researchSummary, setResearchSummary] = useState<string>("");
   const [isHistoricalExpanded, setIsHistoricalExpanded] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   useEffect(() => {
     if (!projectId || !problemId) {
@@ -179,11 +180,80 @@ export default function IdeationPage() {
     setExpandedIdea(expandedIdea === id ? null : id);
   };
 
+  const handleRegenerateIdeas = async () => {
+    try {
+      setIsRegenerating(true);
+      setError(null);
+
+      // Build URL with query parameters for the API
+      let apiUrl = `/api/projects/${projectId}/stages/3/generate`;
+      const queryParams = new URLSearchParams();
+
+      if (problemId && problemId !== "custom") {
+        // For predefined problems
+        queryParams.append("selected_problem_id", problemId);
+        console.log(`Selected problem ID: ${problemId}`);
+      } else if (customProblem) {
+        // For custom problems
+        queryParams.append("custom_problem", customProblem);
+        console.log(`Custom problem: ${customProblem}`);
+      }
+
+      // Add the query string to the URL
+      if (queryParams.toString()) {
+        apiUrl += `?${queryParams.toString()}`;
+      }
+
+      console.log(`Calling API: ${apiUrl}`);
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        let errorMessage = "Failed to regenerate ideas";
+
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorMessage;
+        } catch (parseError) {
+          console.error("Failed to parse error response:", parseError);
+          try {
+            // Try to get the text if JSON parsing fails
+            const errorText = await response.text();
+            if (errorText) {
+              errorMessage = errorText;
+            }
+          } catch (textError) {
+            console.error("Failed to get error text:", textError);
+          }
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      console.log("Ideas regenerated successfully - reloading page");
+
+      // Wait for a moment to ensure backend processing is complete
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Refresh the page to show new ideas
+      window.location.reload();
+    } catch (err) {
+      console.error("Error regenerating ideas:", err);
+      setError((err as Error).message || "Failed to regenerate ideas");
+      setIsRegenerating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen p-6 flex flex-col items-center justify-center">
         <Loader2 className="w-12 h-12 animate-spin text-blue-600 mb-4" />
-        <p className="text-xl">Loading ideas...</p>
+        <p className="text-lg font-medium">Loading ideas...</p>
       </div>
     );
   }
@@ -211,13 +281,13 @@ export default function IdeationPage() {
       </div>
 
       {/* Main Content */}
-      <div className="space-y-12">
-        <h2 className="text-4xl font-bold">Ideation</h2>
+      <div className="space-y-16">
+        <h2 className="text-5xl font-bold mb-8">Ideation</h2>
 
         {/* Error State */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-            <p>{error}</p>
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            <p className="text-base">{error}</p>
             <button
               onClick={() => window.location.reload()}
               className="mt-2 text-sm underline"
@@ -228,107 +298,117 @@ export default function IdeationPage() {
         )}
 
         {/* Problem Statement Section */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold">Problem Statement</h3>
+        <div className="space-y-2 mb-10">
+          <div className="flex items-start justify-between mb-4">
+            <h3 className="text-4xl font-bold">Problem Statement</h3>
             <button
               onClick={() =>
                 router.push(`/workflow/problem?projectId=${projectId}`)
               }
-              className="bg-black text-white px-6 py-2 rounded-[10px] text-lg font-medium"
+              className="bg-black text-white px-6 py-2 rounded-[10px] text-sm font-medium"
             >
               Modify Problem
             </button>
           </div>
-          <p className="text-gray-600 text-xl">
-            {problemStatement
-              ? problemStatement.problem
-              : "No problem statement selected"}
-          </p>
-          {problemStatement && problemStatement.explanation && (
-            <p className="text-gray-500 text-lg mt-2">
-              {problemStatement.explanation}
+          <div className="border border-gray-100 rounded-lg p-6 bg-white">
+            <p className="text-xl font-medium mb-3">
+              {problemStatement
+                ? problemStatement.problem
+                : "No problem statement selected"}
             </p>
-          )}
-        </div>
-
-        {/* Research Summary Section */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-2xl font-bold">Research Summary</h3>
-            <button
-              onClick={() =>
-                router.push(`/workflow/upload?projectId=${projectId}`)
-              }
-              className="bg-black text-white px-6 py-2 rounded-[10px] text-lg font-medium"
-            >
-              Modify Research
-            </button>
-          </div>
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-[150px]">
-            {researchSummary ? (
-              <p className="text-gray-600 text-xl">{researchSummary}</p>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-32">
-                <p className="text-gray-500 text-lg">
-                  No research summary available. Please upload research
-                  documents first.
-                </p>
-              </div>
+            {problemStatement && problemStatement.explanation && (
+              <p className="text-gray-600 text-lg">
+                {problemStatement.explanation}
+              </p>
             )}
           </div>
         </div>
 
-        {/* Generated Ideas Section */}
-        <div className="space-y-4">
-          <h3 className="text-2xl font-bold">Generated Ideas</h3>
-          {productIdeas.length > 0 ? (
-            productIdeas.map((idea) => (
-              <div key={idea.id} className="border-b border-gray-200">
-                <div
-                  className="flex items-center justify-between py-4 cursor-pointer"
-                  onClick={() => handleIdeaToggle(idea.id)}
-                >
-                  <div className="flex items-center gap-4">
-                    <input
-                      type="radio"
-                      id={idea.id}
-                      name="idea"
-                      checked={selectedIdea === idea.id}
-                      onChange={() => handleIdeaToggle(idea.id)}
-                      className="w-5 h-5"
-                    />
-                    <label htmlFor={idea.id} className="text-lg cursor-pointer">
-                      {idea.idea}
-                    </label>
-                  </div>
-                  <ChevronDown
-                    className={`w-6 h-6 transition-transform ${
-                      expandedIdea === idea.id ? "rotate-180" : ""
-                    }`}
-                  />
-                </div>
-                {expandedIdea === idea.id && (
-                  <div className="pb-4 pl-9">
-                    <p className="text-gray-600">{idea.detailed_explanation}</p>
-                  </div>
-                )}
-              </div>
-            ))
+        {/* Research Summary Section */}
+        <div className="space-y-2 mb-10">
+          <div className="flex items-start justify-between mb-4">
+            <h3 className="text-4xl font-bold">Research Summary</h3>
+            <button
+              onClick={() =>
+                router.push(`/workflow/upload?projectId=${projectId}`)
+              }
+              className="bg-black text-white px-6 py-2 rounded-[10px] text-sm font-medium"
+            >
+              Modify Research
+            </button>
+          </div>
+          {researchSummary ? (
+            <p className="text-lg leading-relaxed">{researchSummary}</p>
           ) : (
-            <p>No ideas generated yet. Try regenerating ideas.</p>
+            <p className="text-gray-500 text-lg">
+              No research summary available. Please upload research documents
+              first.
+            </p>
+          )}
+        </div>
+
+        {/* Generated Ideas Section */}
+        <div className="space-y-2 mb-10">
+          <h3 className="text-4xl font-bold mb-6">Generated Ideas</h3>
+          {productIdeas.length > 0 ? (
+            <div className="space-y-5">
+              {productIdeas.map((idea) => (
+                <div
+                  key={idea.id}
+                  className="border border-gray-200 rounded-lg overflow-hidden"
+                >
+                  <div
+                    className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => handleIdeaToggle(idea.id)}
+                  >
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="radio"
+                        id={idea.id}
+                        name="idea"
+                        checked={selectedIdea === idea.id}
+                        onChange={() => handleIdeaToggle(idea.id)}
+                        className="w-5 h-5 accent-blue-600"
+                      />
+                      <label
+                        htmlFor={idea.id}
+                        className="text-lg font-medium cursor-pointer"
+                      >
+                        {idea.idea}
+                      </label>
+                    </div>
+                    <ChevronDown
+                      className={`w-6 h-6 transition-transform ${
+                        expandedIdea === idea.id ? "rotate-180" : ""
+                      }`}
+                    />
+                  </div>
+                  {expandedIdea === idea.id && (
+                    <div className="p-5 pl-14 border-t border-gray-100 bg-white">
+                      <p className="text-gray-700 text-base leading-relaxed">
+                        {idea.detailed_explanation}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-lg py-4">
+              No ideas generated yet. Try regenerating ideas.
+            </p>
           )}
         </div>
 
         {/* Historical Ideas Section */}
-        <div className="space-y-4">
-          <h3 className="text-2xl font-bold">Historical Ideas</h3>
-          <div className="border-b border-gray-200">
+        {/* <div className="space-y-2 mb-10">
+          <h3 className="text-4xl font-bold mb-6">Historical Ideas</h3>
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
             <div
-              className="flex items-center justify-between py-4 cursor-pointer"
+              className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors"
               onClick={() => setIsHistoricalExpanded(!isHistoricalExpanded)}
             >
-              <span className="text-lg">generation 1</span>
+              <span className="text-lg font-medium">Generation 1</span>
               <ChevronDown
                 className={`w-6 h-6 transition-transform ${
                   isHistoricalExpanded ? "rotate-180" : ""
@@ -336,98 +416,24 @@ export default function IdeationPage() {
               />
             </div>
             {isHistoricalExpanded && (
-              <div className="pb-4">
-                <p className="text-gray-600">
+              <div className="p-5 border-t border-gray-100">
+                <p className="text-gray-700 text-base">
                   Historical ideas from generation 1...
                 </p>
               </div>
             )}
           </div>
-        </div>
+        </div> */}
 
         {/* Bottom Actions */}
-        <div className="flex flex-wrap gap-4 pt-4">
+        <div className="flex flex-wrap gap-6">
           <button
-            onClick={async () => {
-              try {
-                setLoading(true);
-                setError(null);
-
-                // Build URL with query parameters for the API
-                // The backend expects exactly:
-                // - selected_problem_id for predefined problems
-                // - custom_problem for custom problems
-                // - never both at the same time
-                let apiUrl = `/api/projects/${projectId}/stages/3/generate`;
-                const queryParams = new URLSearchParams();
-
-                if (problemId && problemId !== "custom") {
-                  // For predefined problems
-                  queryParams.append("selected_problem_id", problemId);
-                  console.log(`Selected problem ID: ${problemId}`);
-                } else if (customProblem) {
-                  // For custom problems
-                  queryParams.append("custom_problem", customProblem);
-                  console.log(`Custom problem: ${customProblem}`);
-                }
-
-                // Add the query string to the URL
-                if (queryParams.toString()) {
-                  apiUrl += `?${queryParams.toString()}`;
-                }
-
-                console.log(`Calling API: ${apiUrl}`);
-
-                const response = await fetch(apiUrl, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  // No body - using query parameters instead
-                });
-
-                if (!response.ok) {
-                  let errorMessage = "Failed to regenerate ideas";
-
-                  try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.detail || errorMessage;
-                  } catch (parseError) {
-                    console.error("Failed to parse error response:", parseError);
-                    try {
-                      // Try to get the text if JSON parsing fails
-                      const errorText = await response.text();
-                      if (errorText) {
-                        errorMessage = errorText;
-                      }
-                    } catch (textError) {
-                      console.error("Failed to get error text:", textError);
-                    }
-                  }
-
-                  throw new Error(errorMessage);
-                }
-
-                console.log("Ideas regenerated successfully - reloading page");
-
-                // Wait for a moment to ensure backend processing is complete
-                await new Promise((resolve) => setTimeout(resolve, 2000));
-
-                // Refresh the page to show new ideas
-                window.location.reload();
-              } catch (err) {
-                console.error("Error regenerating ideas:", err);
-                setError(
-                  (err as Error).message || "Failed to regenerate ideas"
-                );
-                setLoading(false);
-              }
-            }}
-            className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
-                     hover:opacity-90 transition-opacity flex items-center gap-2"
-            disabled={loading}
+            onClick={handleRegenerateIdeas}
+            disabled={isRegenerating}
+            className="bg-black text-white px-8 py-3 rounded-[10px] text-lg font-medium
+                    hover:opacity-90 transition-opacity flex items-center gap-2"
           >
-            {loading ? (
+            {isRegenerating ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
                 Regenerating...
@@ -446,16 +452,16 @@ export default function IdeationPage() {
                 `/workflow/report?projectId=${projectId}&solutionId=${selectedIdea}`
               );
             }}
-            disabled={!selectedIdea || loading}
-            className={`bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
-                     hover:opacity-90 transition-opacity inline-flex items-center gap-2
-                     ${
-                       !selectedIdea || loading
-                         ? "opacity-70 cursor-not-allowed"
-                         : ""
-                     }`}
+            disabled={!selectedIdea || isRegenerating}
+            className={`bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-lg font-medium
+                    hover:opacity-90 transition-opacity inline-flex items-center gap-2
+                    ${
+                      !selectedIdea || isRegenerating
+                        ? "opacity-50 cursor-not-allowed"
+                        : ""
+                    }`}
           >
-            Generate report
+            Generate Report
             <Rocket className="w-5 h-5" />
           </button>
         </div>

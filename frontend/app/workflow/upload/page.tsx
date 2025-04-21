@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { useState, useEffect } from "react";
-import { Upload, Rocket } from "lucide-react";
+import { Upload, Rocket, Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -18,12 +18,13 @@ export default function UploadPage() {
   const [pastedText, setPastedText] = useState("");
   const [analysis, setAnalysis] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [fileUploadStatus, setFileUploadStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<
     Array<{ name: string; uploadedAt: string }>
   >([]);
+  const [isRestoringState, setIsRestoringState] = useState(false);
 
   useEffect(() => {
     // Get the project ID from URL params or localStorage as fallback
@@ -32,75 +33,122 @@ export default function UploadPage() {
 
     if (projectIdFromUrl) {
       setProjectId(projectIdFromUrl);
+
+      // Try to restore state from localStorage for this project
+      restoreStateFromLocalStorage(projectIdFromUrl);
     } else if (storedProjectId) {
       setProjectId(storedProjectId);
+
+      // Try to restore state from localStorage for this project
+      restoreStateFromLocalStorage(storedProjectId);
     } else {
       // Redirect to workflow page if no project ID is found
       router.push("/workflow");
     }
   }, [searchParams, router]);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      // Validate file type (PDF only)
-      if (file.type !== "application/pdf") {
-        setError("Only PDF files are supported");
-        setSelectedFile(null);
-        return;
-      }
+  // Save current state to localStorage when analysis changes
+  useEffect(() => {
+    if (projectId && (analysis || uploadedFiles.length > 0)) {
+      saveStateToLocalStorage();
+    }
+  }, [analysis, uploadedFiles, projectId]);
 
-      setSelectedFile(file);
-      setError(null);
-      console.log("File selected:", file.name);
+  const saveStateToLocalStorage = () => {
+    if (!projectId) return;
+
+    try {
+      const stateToSave = {
+        analysis,
+        uploadedFiles,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      localStorage.setItem(
+        `project_${projectId}_upload_state`,
+        JSON.stringify(stateToSave)
+      );
+      console.log("Saved state to localStorage:", stateToSave);
+    } catch (error) {
+      console.error("Error saving state to localStorage:", error);
     }
   };
 
-  const handleUploadToServer = async () => {
-    if (!selectedFile) {
-      setError("Please select a file to upload");
-      return;
+  const restoreStateFromLocalStorage = (projectId: string) => {
+    try {
+      setIsRestoringState(true);
+      const savedState = localStorage.getItem(
+        `project_${projectId}_upload_state`
+      );
+
+      if (savedState) {
+        const parsedState = JSON.parse(savedState);
+        console.log("Restoring state from localStorage:", parsedState);
+
+        if (parsedState.analysis) {
+          setAnalysis(parsedState.analysis);
+        }
+
+        if (parsedState.uploadedFiles && parsedState.uploadedFiles.length > 0) {
+          setUploadedFiles(parsedState.uploadedFiles);
+        }
+      }
+    } catch (error) {
+      console.error("Error restoring state from localStorage:", error);
+    } finally {
+      setIsRestoringState(false);
     }
+  };
 
-    if (!projectId) {
-      setError("Project ID is missing");
-      return;
-    }
-
-    if (!user) {
-      setError("You must be logged in to upload files");
-      return;
-    }
-
-    setFileUploadStatus("Uploading...");
-    setError(null);
-
-    // Get access token from local storage
-    let accessToken = "";
-    let tokenType = "bearer";
+  const getAuthToken = () => {
     try {
       const userData = localStorage.getItem("innovation_workflow_user");
       if (userData) {
         const parsedUser = JSON.parse(userData);
-        accessToken = parsedUser.access_token;
-        tokenType = parsedUser.token_type || "bearer";
+        return {
+          accessToken: parsedUser.access_token,
+          tokenType: parsedUser.token_type || "bearer",
+        };
       }
     } catch (e) {
       console.error("Error getting token from storage:", e);
-      setError("Could not retrieve authentication token");
-      setFileUploadStatus(null);
+      return null;
+    }
+    return null;
+  };
+
+  const handleUploadToServer = async (file: File) => {
+    if (!file) {
+      setError("No file to upload");
       return null;
     }
 
-    if (!accessToken) {
-      setError("No access token available");
+    if (!projectId) {
+      setError("Project ID is missing");
+      return null;
+    }
+
+    if (!user) {
+      setError("You must be logged in to upload files");
+      return null;
+    }
+
+    setIsUploading(true);
+    setFileUploadStatus("Uploading...");
+    setError(null);
+
+    // Get access token from local storage
+    const auth = getAuthToken();
+    if (!auth) {
+      setError("Authentication failed. Please log in again.");
+      setIsUploading(false);
       setFileUploadStatus(null);
       return null;
     }
 
     // Create a FormData object to send the file
     const formData = new FormData();
-    formData.append("file", selectedFile);
+    formData.append("file", file);
 
     try {
       // Upload directly to the backend (not through Next.js API route)
@@ -110,7 +158,7 @@ export default function UploadPage() {
       const response = await fetch(backendUrl, {
         method: "POST",
         headers: {
-          Authorization: `${tokenType} ${accessToken}`,
+          Authorization: `${auth.tokenType} ${auth.accessToken}`,
         },
         body: formData,
       });
@@ -120,7 +168,6 @@ export default function UploadPage() {
         console.error("Upload failed:", errorText);
         if (response.status === 401 || response.status === 403) {
           setError("Authentication failed. Please log in again.");
-          // You might want to trigger a logout or redirect to login here
           return null;
         }
         throw new Error(errorText || "Failed to upload file");
@@ -132,16 +179,15 @@ export default function UploadPage() {
       setFileUploadStatus("Upload successful");
 
       // Add the uploaded file to the list
-      setUploadedFiles((prev) => [
-        ...prev,
+      const newUploadedFiles = [
+        ...uploadedFiles,
         {
-          name: selectedFile.name,
+          name: file.name,
           uploadedAt: new Date().toLocaleString(),
         },
-      ]);
+      ];
 
-      // Clear the selected file
-      setSelectedFile(null);
+      setUploadedFiles(newUploadedFiles);
 
       return data;
     } catch (err) {
@@ -151,11 +197,29 @@ export default function UploadPage() {
       );
       setFileUploadStatus(null);
       return null;
+    } finally {
+      setIsUploading(false);
     }
   };
 
-  const delay = (ms: number) =>
-    new Promise((resolve) => setTimeout(resolve, ms));
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type (PDF only)
+      if (file.type !== "application/pdf") {
+        setError("Only PDF files are supported");
+        return;
+      }
+
+      setError(null);
+      console.log("File selected:", file.name);
+
+      // Automatically upload the file when selected
+      await handleUploadToServer(file);
+    }
+  };
 
   const handleGenerateAnalysis = async () => {
     if (!projectId) {
@@ -167,35 +231,11 @@ export default function UploadPage() {
     setError(null);
 
     try {
-      // If we have a file but haven't uploaded it yet, upload it first
-      if (selectedFile && fileUploadStatus !== "Upload successful") {
-        const uploadResult = await handleUploadToServer();
-        if (!uploadResult) {
-          throw new Error("File upload failed");
-        }
-      }
-
       // Get access token from local storage
-      let accessToken = "";
-      let tokenType = "bearer";
-      try {
-        const userData = localStorage.getItem("innovation_workflow_user");
-        if (userData) {
-          const parsedUser = JSON.parse(userData);
-          accessToken = parsedUser.access_token;
-          tokenType = parsedUser.token_type || "bearer";
-        }
-      } catch (e) {
-        console.error("Error getting token from storage:", e);
-        throw new Error("Could not retrieve authentication token");
+      const auth = getAuthToken();
+      if (!auth) {
+        throw new Error("Authentication failed. Please log in again.");
       }
-
-      if (!accessToken) {
-        throw new Error("No access token available");
-      }
-
-      // Wait for document processing (5 seconds)
-      await delay(5000);
 
       // Call the Stage 1 Part 2 API endpoint
       const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/generate`;
@@ -204,9 +244,11 @@ export default function UploadPage() {
       const response = await fetch(backendUrl, {
         method: "POST",
         headers: {
-          Authorization: `${tokenType} ${accessToken}`,
+          Authorization: `${auth.tokenType} ${auth.accessToken}`,
           "Content-Type": "application/json",
         },
+        // If there's pasted text, include it in the request body
+        ...(pastedText && { body: JSON.stringify({ text: pastedText }) }),
       });
 
       if (!response.ok) {
@@ -226,6 +268,9 @@ export default function UploadPage() {
       }
 
       setAnalysis(data.data.analysis);
+
+      // Save to localStorage
+      saveStateToLocalStorage();
     } catch (err) {
       console.error("Error generating analysis:", err);
       setError(
@@ -238,14 +283,15 @@ export default function UploadPage() {
   };
 
   const handleDeleteFile = (index: number) => {
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+    const newFiles = uploadedFiles.filter((_, i) => i !== index);
+    setUploadedFiles(newFiles);
   };
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen p-6 flex flex-col max-w-6xl mx-auto">
         {/* Header */}
-        <div className="text-center space-y-4 mb-8">
+        <div className="text-center space-y-4 mb-12">
           <h1 className="text-4xl md:text-6xl font-bold">
             Innovation Workflow
           </h1>
@@ -267,18 +313,25 @@ export default function UploadPage() {
         </div>
 
         {/* Main Content */}
-        <div className="space-y-8">
+        <div className="space-y-12">
           <h2 className="text-4xl font-bold">Interview Transcript Analysis</h2>
 
+          {isRestoringState && (
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded flex items-center">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" />
+              Restoring your previous session...
+            </div>
+          )}
+
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
               {error}
             </div>
           )}
 
           <div className="grid md:grid-cols-2 gap-8">
             {/* Upload Section */}
-            <div className="space-y-2">
+            <div className="space-y-4">
               <h3 className="text-2xl font-bold">Upload PDF document</h3>
               <div className="border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center min-h-[300px]">
                 <input
@@ -292,11 +345,16 @@ export default function UploadPage() {
                   htmlFor="file-upload"
                   className="cursor-pointer flex flex-col items-center space-y-4"
                 >
-                  <Upload className="w-12 h-12" />
-                  <span className="text-xl font-medium">Upload PDF</span>
-                  {selectedFile && (
-                    <span className="text-green-600">{selectedFile.name}</span>
+                  {isUploading ? (
+                    <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+                  ) : (
+                    <Upload className="w-12 h-12" />
                   )}
+                  <span className="text-xl font-medium">
+                    {isUploading
+                      ? "Uploading..."
+                      : "Drop PDF here or click to upload"}
+                  </span>
                   {fileUploadStatus && (
                     <span
                       className={`${
@@ -313,7 +371,7 @@ export default function UploadPage() {
 
               {/* Uploaded Files List */}
               {uploadedFiles.length > 0 && (
-                <div className="mt-6 bg-white rounded-lg p-4">
+                <div className="bg-white rounded-lg p-4">
                   <h4 className="text-xl font-medium mb-4">Uploaded files:</h4>
                   <div className="space-y-2">
                     {uploadedFiles.map((file, index) => (
@@ -321,7 +379,7 @@ export default function UploadPage() {
                         key={index}
                         className="flex items-center justify-between py-3 px-4 bg-gray-50 rounded"
                       >
-                        <span className="text-base">{file.name}</span>
+                        <span>{file.name}</span>
                         <button
                           onClick={() => handleDeleteFile(index)}
                           className="text-gray-400 hover:text-gray-600"
@@ -348,12 +406,12 @@ export default function UploadPage() {
             </div>
 
             {/* Text Input Section */}
-            <div className="space-y-2">
+            <div className="space-y-4">
               <h3 className="text-2xl font-bold">Paste copied text</h3>
               <textarea
                 value={pastedText}
                 onChange={(e) => setPastedText(e.target.value)}
-                placeholder="paste text here*"
+                placeholder="Paste text here..."
                 className="w-full h-[300px] p-4 border rounded-lg resize-none"
               />
             </div>
@@ -363,18 +421,25 @@ export default function UploadPage() {
           <div className="flex justify-start">
             <button
               onClick={handleGenerateAnalysis}
-              disabled={isAnalyzing || (!selectedFile && !pastedText)}
+              disabled={isAnalyzing || (!uploadedFiles.length && !pastedText)}
               className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
-                      hover:opacity-90 transition-opacity disabled:opacity-50"
+                      hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
             >
-              {isAnalyzing ? "Analyzing..." : "Generate Analysis"}
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                "Generate Analysis"
+              )}
             </button>
           </div>
 
           {/* Analysis Results */}
           {analysis && (
             <div className="space-y-4">
-              <h3 className="text-3xl font-bold">Analysis Results:</h3>
+              <h3 className="text-2xl font-bold">Analysis Results:</h3>
               <div className="p-4 border rounded-lg bg-gray-50">
                 <p className="text-gray-600 leading-relaxed whitespace-pre-line">
                   {analysis}
@@ -384,7 +449,7 @@ export default function UploadPage() {
           )}
 
           {/* Bottom Actions */}
-          <div className="flex flex-wrap gap-4 justify-start mt-8">
+          <div className="flex flex-wrap gap-4 justify-start">
             <button
               onClick={() => router.push("/workflow")}
               className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
@@ -393,9 +458,11 @@ export default function UploadPage() {
               Return Home
             </button>
             <button
-              onClick={() =>
-                router.push(`/workflow/problem?projectId=${projectId}`)
-              }
+              onClick={() => {
+                // Save state before navigating
+                saveStateToLocalStorage();
+                router.push(`/workflow/problem?projectId=${projectId}`);
+              }}
               className="bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
                       hover:opacity-90 transition-opacity inline-flex items-center gap-2"
               disabled={!analysis}
