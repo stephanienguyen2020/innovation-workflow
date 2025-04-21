@@ -2,7 +2,7 @@ from app.middleware.log import APIGatewayMiddleware
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.constant.config import SECRET_KEY
-from app.routers import conversation, rag, auth, project
+from app.routers import conversation, rag, auth, project, resource_alloc
 from starlette.middleware.sessions import SessionMiddleware
 from app.database.database import session_manager
 from contextlib import asynccontextmanager
@@ -83,6 +83,11 @@ app.include_router(
 app.include_router(
     rag.router,
     prefix="/api",
+    dependencies=[Depends(get_current_user)]
+)
+# Add resource monitoring router
+app.include_router(
+    resource_alloc.router,
     dependencies=[Depends(get_current_user)]
 )
 
