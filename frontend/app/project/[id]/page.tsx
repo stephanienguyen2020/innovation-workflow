@@ -237,10 +237,10 @@ export default function ProjectDetailsPage() {
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-3xl font-bold">Project Details</h1>
             <button
-              onClick={() => router.push("/past")}
-              className="inline-flex items-center justify-center bg-gray-200 text-gray-800 rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-300"
+              onClick={() => router.push("/new")}
+              className="inline-flex items-center justify-center bg-[#001DFA] text-white rounded-[10px] px-4 py-2 text-sm font-medium hover:opacity-90"
             >
-              Back to Projects
+              Start New Project
             </button>
           </div>
           <div className="bg-white rounded-lg shadow p-8 flex justify-center items-center">
@@ -259,10 +259,10 @@ export default function ProjectDetailsPage() {
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-3xl font-bold">Project Details</h1>
             <button
-              onClick={() => router.push("/past")}
-              className="inline-flex items-center justify-center bg-gray-200 text-gray-800 rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-300"
+              onClick={() => router.push("/new")}
+              className="inline-flex items-center justify-center bg-[#001DFA] text-white rounded-[10px] px-4 py-2 text-sm font-medium hover:opacity-90"
             >
-              Back to Projects
+              Start New Project
             </button>
           </div>
           <div className="bg-white rounded-lg shadow p-8 text-center">
@@ -280,12 +280,46 @@ export default function ProjectDetailsPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">{project.problem_domain}</h1>
-          <button
-            onClick={() => router.push("/past")}
-            className="inline-flex items-center justify-center bg-gray-200 text-gray-800 rounded-md px-4 py-2 text-sm font-medium hover:bg-gray-300"
-          >
-            Back to Projects
-          </button>
+          <div className="flex gap-4">
+            <button
+              onClick={() => {
+                // Find if there's any solution ID available in stage 3 or 4
+                let solutionId = null;
+
+                // Check stage 4 for a chosen solution
+                if (stages[4]?.data?.chosen_solution?.id) {
+                  solutionId = stages[4].data.chosen_solution.id;
+                }
+                // Otherwise check stage 3 for any product ideas
+                else if (
+                  stages[3]?.data?.product_ideas &&
+                  stages[3].data.product_ideas.length > 0
+                ) {
+                  solutionId = stages[3].data.product_ideas[0].id;
+                }
+
+                if (solutionId) {
+                  router.push(
+                    `/workflow/report?projectId=${project._id}&solutionId=${solutionId}`
+                  );
+                } else {
+                  alert(
+                    "No solution found. Please complete the idea generation step first."
+                  );
+                  router.push(`/workflow/ideas?projectId=${project._id}`);
+                }
+              }}
+              className="inline-flex items-center justify-center bg-black text-white rounded-[10px] px-4 py-2 text-sm font-medium hover:opacity-90"
+            >
+              Edit Project
+            </button>
+            <button
+              onClick={() => router.push("/new")}
+              className="inline-flex items-center justify-center bg-[#001DFA] text-white rounded-[10px] px-4 py-2 text-sm font-medium hover:opacity-90"
+            >
+              Start New Project
+            </button>
+          </div>
         </div>
 
         <div className="bg-white rounded-lg shadow overflow-hidden">
