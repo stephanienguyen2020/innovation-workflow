@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useEffect, Suspense } from "react";
 import { ChevronDown, Rocket, Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -27,7 +29,7 @@ interface Stage {
   };
 }
 
-export default function IdeationPage() {
+function IdeationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams.get("projectId");
@@ -47,10 +49,8 @@ export default function IdeationPage() {
   const [isRegenerating, setIsRegenerating] = useState(false);
 
   useEffect(() => {
-    if (!projectId || !problemId) {
-      setError(
-        "No project ID or problem ID provided. Please go back and select a project and problem."
-      );
+    if (!projectId) {
+      setError("No project ID provided. Please go back and select a project.");
       setLoading(false);
       return;
     }
@@ -87,33 +87,27 @@ export default function IdeationPage() {
             if (ideasData.data.product_ideas.length > 0) {
               setExpandedIdea(ideasData.data.product_ideas[0].id);
               setSelectedIdea(ideasData.data.product_ideas[0].id);
+
+              // If we don't have problemId from URL, try to get it from the first idea
+              if (!problemId && ideasData.data.product_ideas[0].problem_id) {
+                const firstIdeaProblemId =
+                  ideasData.data.product_ideas[0].problem_id;
+                console.log(
+                  "Using problem ID from first idea:",
+                  firstIdeaProblemId
+                );
+
+                // Fetch the problem statement using this ID
+                await fetchProblemStatement(firstIdeaProblemId);
+                return; // Return early since we'll fetch everything else with the problem ID
+              }
             }
           }
         }
 
         // 2. Fetch the problem statement (if it's not a custom problem)
-        if (problemId !== "custom") {
-          const problemResponse = await fetch(
-            `/api/projects/${projectId}/stages/2`
-          );
-
-          if (problemResponse.ok) {
-            const problemData = await problemResponse.json();
-
-            if (
-              problemData &&
-              problemData.data &&
-              Array.isArray(problemData.data.problem_statements)
-            ) {
-              const problem = problemData.data.problem_statements.find(
-                (p: ProblemStatement) => p.id === problemId
-              );
-
-              if (problem) {
-                setProblemStatement(problem);
-              }
-            }
-          }
+        if (problemId && problemId !== "custom") {
+          await fetchProblemStatement(problemId);
         } else if (customProblem) {
           // Use the custom problem passed in URL params
           setProblemStatement({
@@ -122,6 +116,34 @@ export default function IdeationPage() {
             explanation: customExplanation || customProblem,
             is_custom: true,
           });
+        } else if (!problemId) {
+          // If we can't get a problem ID, try fetching from stage 2 to get the latest problem
+          try {
+            console.log("No problem ID provided, fetching from stage 2");
+            const problemResponse = await fetch(
+              `/api/projects/${projectId}/stages/2`
+            );
+
+            if (problemResponse.ok) {
+              const problemData = await problemResponse.json();
+
+              if (
+                problemData &&
+                problemData.data &&
+                Array.isArray(problemData.data.problem_statements) &&
+                problemData.data.problem_statements.length > 0
+              ) {
+                // Use the first problem statement
+                const firstProblem = problemData.data.problem_statements[0];
+                setProblemStatement(firstProblem);
+                console.log("Using first problem from stage 2:", firstProblem);
+              }
+            } else {
+              console.warn("Could not fetch problems from stage 2");
+            }
+          } catch (err) {
+            console.error("Error fetching problems from stage 2:", err);
+          }
         }
 
         // 3. Fetch research summary from stage 1
@@ -169,6 +191,31 @@ export default function IdeationPage() {
         setError((err as Error).message || "Failed to fetch data");
       } finally {
         setLoading(false);
+      }
+    };
+
+    // Helper function to fetch problem statement
+    const fetchProblemStatement = async (id: string) => {
+      const problemResponse = await fetch(
+        `/api/projects/${projectId}/stages/2`
+      );
+
+      if (problemResponse.ok) {
+        const problemData = await problemResponse.json();
+
+        if (
+          problemData &&
+          problemData.data &&
+          Array.isArray(problemData.data.problem_statements)
+        ) {
+          const problem = problemData.data.problem_statements.find(
+            (p: ProblemStatement) => p.id === id
+          );
+
+          if (problem) {
+            setProblemStatement(problem);
+          }
+        }
       }
     };
 
@@ -270,7 +317,53 @@ export default function IdeationPage() {
             <div key={step} className="flex items-center">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-white
-                ${step === 3 ? "bg-[#001DFA]" : "bg-black"}`}
+                ${step === 3 ? "bg-[#001DFA]" : "bg-black"}
+                cursor-pointer hover:opacity-80 transition-opacity`}
+                onClick={() => {
+                  if (step === 1) {
+                    router.push(`/workflow/upload?projectId=${projectId}`);
+                  } else if (step === 2) {
+                    router.push(`/workflow/problem?projectId=${projectId}`);
+                  } else if (step === 3) {
+                    // Current page (ideas)
+                    return;
+                  } else if (step === 4) {
+                    // Check if stage 4 already exists/is completed
+                    fetch(`/api/projects/${projectId}/stages/4`)
+                      .then((response) => {
+                        if (response.ok) {
+                          // Stage 4 exists, can navigate directly
+                          router.push(
+                            `/workflow/report?projectId=${projectId}`
+                          );
+                        } else {
+                          // Stage 4 doesn't exist, need to select an idea first
+                          if (selectedIdea) {
+                            router.push(
+                              `/workflow/report?projectId=${projectId}&solutionId=${selectedIdea}`
+                            );
+                          } else {
+                            alert(
+                              "Please select an idea first before proceeding to the report."
+                            );
+                          }
+                        }
+                      })
+                      .catch((error) => {
+                        console.error("Error checking stage 4:", error);
+                        // Default to safe behavior
+                        if (selectedIdea) {
+                          router.push(
+                            `/workflow/report?projectId=${projectId}&solutionId=${selectedIdea}`
+                          );
+                        } else {
+                          alert(
+                            "Please select an idea first before proceeding to the report."
+                          );
+                        }
+                      });
+                  }
+                }}
               >
                 {step}
               </div>
@@ -282,7 +375,7 @@ export default function IdeationPage() {
 
       {/* Main Content */}
       <div className="space-y-16">
-        <h2 className="text-5xl font-bold mb-8">Ideation</h2>
+        <h2 className="text-5xl font-bold mb-8">Ideas</h2>
 
         {/* Error State */}
         {error && (
@@ -467,5 +560,19 @@ export default function IdeationPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function IdeationPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }
+    >
+      <IdeationContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+export const dynamic = "force-dynamic";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function POST(request: NextRequest) {
@@ -120,8 +122,8 @@ export async function GET() {
 
     const response = await fetch(`${API_URL}/api/projects/`, {
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
       },
     });
 
@@ -149,7 +151,7 @@ export async function GET() {
     console.log("Projects fetched successfully:", data.length, "projects");
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error fetching projects:', error);
+    console.error("Error fetching projects:", error);
     return NextResponse.json(
       { detail: "An error occurred while fetching projects" },
       { status: 500 }

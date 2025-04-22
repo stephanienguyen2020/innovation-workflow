@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "fix:dynamic-routes": "node scripts/update-dynamic-routes.js",
+    "check:suspense": "node scripts/add-suspense-boundaries.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

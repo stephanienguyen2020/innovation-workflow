@@ -20,15 +20,15 @@ export default function PastProjectsPage() {
 
     const fetchProjects = async () => {
       try {
-        const response = await fetch('/api/projects', {
-          method: 'GET',
+        const response = await fetch("/api/projects", {
+          method: "GET",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
         });
 
         if (!response.ok) {
-          throw new Error('Failed to fetch projects');
+          throw new Error("Failed to fetch projects");
         }
 
         const data = await response.json();
