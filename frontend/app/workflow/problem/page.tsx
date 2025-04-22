@@ -289,7 +289,88 @@ export default function ProblemDefinitionPage() {
             <div key={step} className="flex items-center">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-white
-                ${step === 2 ? "bg-[#001DFA]" : "bg-black"}`}
+                ${step === 2 ? "bg-[#001DFA]" : "bg-black"}
+                cursor-pointer hover:opacity-80 transition-opacity`}
+                onClick={() => {
+                  if (step === 1) {
+                    router.push(`/workflow/upload?projectId=${projectId}`);
+                  } else if (step === 2) {
+                    // Current page (problem)
+                    return;
+                  } else if (step === 3) {
+                    if (selectedProblem) {
+                      if (selectedProblem === "custom") {
+                        router.push(
+                          `/workflow/ideas?projectId=${projectId}&problemId=custom&problem=${encodeURIComponent(
+                            customProblem
+                          )}&explanation=${encodeURIComponent(
+                            customExplanation || ""
+                          )}`
+                        );
+                      } else {
+                        router.push(
+                          `/workflow/ideas?projectId=${projectId}&problemId=${selectedProblem}`
+                        );
+                      }
+                    } else {
+                      // Try to use the first problem if available
+                      if (problemStatements.length > 0) {
+                        router.push(
+                          `/workflow/ideas?projectId=${projectId}&problemId=${problemStatements[0].id}`
+                        );
+                      } else {
+                        // Otherwise just navigate to the ideas page and let it handle the lack of problem ID
+                        router.push(`/workflow/ideas?projectId=${projectId}`);
+                      }
+                    }
+                  } else if (step === 4) {
+                    // First check if stage 4 already exists/is completed
+                    fetch(`/api/projects/${projectId}/stages/4`)
+                      .then((response) => {
+                        if (response.ok) {
+                          // Stage 4 exists, can navigate directly
+                          router.push(
+                            `/workflow/report?projectId=${projectId}`
+                          );
+                        } else {
+                          // Stage 4 doesn't exist, need to go through ideas first
+                          alert(
+                            "Please select an idea in the next step to generate a report."
+                          );
+
+                          // Determine how to navigate to ideas based on problem selection
+                          if (selectedProblem) {
+                            if (selectedProblem === "custom") {
+                              router.push(
+                                `/workflow/ideas?projectId=${projectId}&problemId=custom&problem=${encodeURIComponent(
+                                  customProblem
+                                )}&explanation=${encodeURIComponent(
+                                  customExplanation || ""
+                                )}`
+                              );
+                            } else {
+                              router.push(
+                                `/workflow/ideas?projectId=${projectId}&problemId=${selectedProblem}`
+                              );
+                            }
+                          } else if (problemStatements.length > 0) {
+                            router.push(
+                              `/workflow/ideas?projectId=${projectId}&problemId=${problemStatements[0].id}`
+                            );
+                          } else {
+                            router.push(
+                              `/workflow/ideas?projectId=${projectId}`
+                            );
+                          }
+                        }
+                      })
+                      .catch((error) => {
+                        console.error("Error checking stage 4:", error);
+                        // Default to safe path
+                        router.push(`/workflow/ideas?projectId=${projectId}`);
+                      });
+                  }
+                }}
               >
                 {step}
               </div>

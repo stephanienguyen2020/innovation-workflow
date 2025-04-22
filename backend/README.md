@@ -119,7 +119,7 @@ uvicorn main:app --reload or uvicorn main:app --host 127.0.0.1 --port 8000
 
 Connect to EC2 instance:
 ```
-ssh -i "innovation_workflow.pem" ubuntu@ec2-3-128-203-97.us-east-2.compute.amazonaws.com
+ssh -i "innovation_workflow.pem" ubuntu@ec2-18-224-67-75.us-east-2.compute.amazonaws.com
 cd innovation-workflow/backend
 python3 -m venv env
 source env/bin/activate
