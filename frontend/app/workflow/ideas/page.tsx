@@ -270,7 +270,20 @@ export default function IdeationPage() {
             <div key={step} className="flex items-center">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-white
-                ${step === 3 ? "bg-[#001DFA]" : "bg-black"}`}
+                ${step === 3 ? "bg-[#001DFA]" : "bg-black"}
+                cursor-pointer hover:opacity-80 transition-opacity`}
+                onClick={() => {
+                  if (step === 1) {
+                    router.push(`/workflow/upload?projectId=${projectId}`);
+                  } else if (step === 2) {
+                    router.push(`/workflow/problem?projectId=${projectId}`);
+                  } else if (step === 3) {
+                    // Current page (ideas)
+                    return;
+                  } else if (step === 4) {
+                    router.push(`/workflow/report?projectId=${projectId}`);
+                  }
+                }}
               >
                 {step}
               </div>
@@ -282,7 +295,7 @@ export default function IdeationPage() {
 
       {/* Main Content */}
       <div className="space-y-16">
-        <h2 className="text-5xl font-bold mb-8">Ideation</h2>
+        <h2 className="text-5xl font-bold mb-8">Ideas</h2>
 
         {/* Error State */}
         {error && (

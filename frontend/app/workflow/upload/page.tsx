@@ -302,7 +302,24 @@ export default function UploadPage() {
               <div key={step} className="flex items-center">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-white
-                  ${step === 1 ? "bg-[#001DFA]" : "bg-black"}`}
+                  ${step === 1 ? "bg-[#001DFA]" : "bg-black"}
+                  cursor-pointer hover:opacity-80 transition-opacity`}
+                  onClick={() => {
+                    // Save current state before navigating
+                    saveStateToLocalStorage();
+
+                    // Navigate to the corresponding page based on step number
+                    if (step === 1) {
+                      // Current page (upload)
+                      return;
+                    } else if (step === 2) {
+                      router.push(`/workflow/problem?projectId=${projectId}`);
+                    } else if (step === 3) {
+                      router.push(`/workflow/ideas?projectId=${projectId}`);
+                    } else if (step === 4) {
+                      router.push(`/workflow/report?projectId=${projectId}`);
+                    }
+                  }}
                 >
                   {step}
                 </div>

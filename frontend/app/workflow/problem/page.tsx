@@ -289,7 +289,20 @@ export default function ProblemDefinitionPage() {
             <div key={step} className="flex items-center">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-white
-                ${step === 2 ? "bg-[#001DFA]" : "bg-black"}`}
+                ${step === 2 ? "bg-[#001DFA]" : "bg-black"}
+                cursor-pointer hover:opacity-80 transition-opacity`}
+                onClick={() => {
+                  if (step === 1) {
+                    router.push(`/workflow/upload?projectId=${projectId}`);
+                  } else if (step === 2) {
+                    // Current page (problem)
+                    return;
+                  } else if (step === 3) {
+                    router.push(`/workflow/ideas?projectId=${projectId}`);
+                  } else if (step === 4) {
+                    router.push(`/workflow/report?projectId=${projectId}`);
+                  }
+                }}
               >
                 {step}
               </div>

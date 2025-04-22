@@ -306,7 +306,20 @@ export default function ReportPage() {
             <div key={step} className="flex items-center">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-white
-                ${step === 4 ? "bg-[#001DFA]" : "bg-black"}`}
+                ${step === 4 ? "bg-[#001DFA]" : "bg-black"}
+                cursor-pointer hover:opacity-80 transition-opacity`}
+                onClick={() => {
+                  if (step === 1) {
+                    router.push(`/workflow/upload?projectId=${projectId}`);
+                  } else if (step === 2) {
+                    router.push(`/workflow/problem?projectId=${projectId}`);
+                  } else if (step === 3) {
+                    router.push(`/workflow/ideas?projectId=${projectId}`);
+                  } else if (step === 4) {
+                    // Current page (report)
+                    return;
+                  }
+                }}
               >
                 {step}
               </div>
