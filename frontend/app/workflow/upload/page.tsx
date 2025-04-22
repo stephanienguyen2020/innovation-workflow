@@ -315,9 +315,35 @@ export default function UploadPage() {
                     } else if (step === 2) {
                       router.push(`/workflow/problem?projectId=${projectId}`);
                     } else if (step === 3) {
+                      // We'll just navigate to the ideas page without problem ID
+                      // The ideas page will handle fetching the problem ID if needed
                       router.push(`/workflow/ideas?projectId=${projectId}`);
                     } else if (step === 4) {
-                      router.push(`/workflow/report?projectId=${projectId}`);
+                      // Check if stage 4 already exists/is completed
+                      fetch(`/api/projects/${projectId}/stages/4`)
+                        .then((response) => {
+                          if (response.ok) {
+                            // Stage 4 exists, can navigate directly
+                            router.push(
+                              `/workflow/report?projectId=${projectId}`
+                            );
+                          } else {
+                            // Stage 4 doesn't exist, need to define problem and select idea first
+                            alert(
+                              "You need to define a problem and select an idea before generating a report. Redirecting to the problems page."
+                            );
+                            router.push(
+                              `/workflow/problem?projectId=${projectId}`
+                            );
+                          }
+                        })
+                        .catch((error) => {
+                          console.error("Error checking stage 4:", error);
+                          // Default to problem page
+                          router.push(
+                            `/workflow/problem?projectId=${projectId}`
+                          );
+                        });
                     }
                   }}
                 >

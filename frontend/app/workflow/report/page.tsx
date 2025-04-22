@@ -33,8 +33,8 @@ export default function ReportPage() {
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
   useEffect(() => {
-    if (!projectId || !solutionId) {
-      setError("Missing project ID or solution ID");
+    if (!projectId) {
+      setError("Missing project ID");
       setLoading(false);
       return;
     }
@@ -43,21 +43,36 @@ export default function ReportPage() {
       try {
         setGeneratingReport(true);
 
-        // Generate Stage 4 data with the chosen solution
-        const generateResponse = await fetch(
-          `/api/projects/${projectId}/stages/4/generate?solutionId=${solutionId}`,
-          { method: "POST" }
-        );
+        // If we have a solutionId, generate the report using it
+        if (solutionId) {
+          // Generate Stage 4 data with the chosen solution
+          const generateResponse = await fetch(
+            `/api/projects/${projectId}/stages/4/generate?solutionId=${solutionId}`,
+            { method: "POST" }
+          );
 
-        if (!generateResponse.ok) {
-          const errorData = await generateResponse.json();
-          throw new Error(errorData.detail || "Failed to generate report");
+          if (!generateResponse.ok) {
+            const errorData = await generateResponse.json();
+            throw new Error(errorData.detail || "Failed to generate report");
+          }
+
+          // Wait for a moment to ensure backend processing is complete
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        } else {
+          // If we don't have a solutionId, check if stage 4 already exists
+          const stageResponse = await fetch(
+            `/api/projects/${projectId}/stages/4`
+          );
+
+          if (!stageResponse.ok) {
+            // Stage 4 doesn't exist and we don't have a solutionId
+            throw new Error("Missing solution ID and no existing report found");
+          }
+
+          console.log("Stage 4 exists, proceeding to fetch report data");
         }
 
-        // Wait for a moment to ensure backend processing is complete
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        // Fetch the formatted report data from our new endpoint
+        // Fetch the formatted report data from our endpoint
         const response = await fetch(`/api/projects/${projectId}/report`);
         if (!response.ok) {
           const errorData = await response.json();
@@ -281,38 +296,21 @@ export default function ReportPage() {
   // Error state content
   if (error) {
     return (
-      <div className="min-h-screen p-6 flex flex-col max-w-6xl mx-auto">
-        <div className="text-center space-y-4 mb-12">
-          <h1 className="text-4xl md:text-6xl font-bold">
-            Innovation Workflow
-          </h1>
-          <div className="flex items-center justify-center gap-0 mt-6">
-            {[1, 2, 3, 4].map((step) => (
-              <div key={step} className="flex items-center">
-                <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white
-                  ${step === 4 ? "bg-[#001DFA]" : "bg-black"}`}
-                >
-                  {step}
-                </div>
-                {step < 4 && <div className="w-12 h-0.5 bg-black" />}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center">
-          <div className="bg-red-50 border border-red-200 text-red-700 p-6 rounded-lg max-w-3xl mx-auto">
-            <h3 className="text-xl font-medium mb-2">Error</h3>
-            <p>{error}</p>
-            <button
-              onClick={() => router.back()}
-              className="mt-4 inline-flex items-center text-sm font-medium text-red-700 hover:text-red-800"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Go back
-            </button>
-          </div>
+      <div className="min-h-screen p-6 flex flex-col items-center justify-center">
+        <div className="bg-red-50 border border-red-200 text-red-700 p-6 rounded-lg max-w-md text-center">
+          <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-500" />
+          <h2 className="text-xl font-bold mb-4">{error}</h2>
+          <p className="mb-6">
+            You need to select a solution idea before viewing the report.
+          </p>
+          <button
+            onClick={() =>
+              router.push(`/workflow/ideas?projectId=${projectId}`)
+            }
+            className="bg-black text-white px-6 py-2 rounded-md hover:bg-gray-800"
+          >
+            Go back
+          </button>
         </div>
       </div>
     );
