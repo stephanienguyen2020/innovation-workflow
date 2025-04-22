@@ -120,19 +120,20 @@ uvicorn main:app --reload or uvicorn main:app --host 127.0.0.1 --port 8000
 Connect to EC2 instance:
 ```
 ssh -i "innovation_workflow.pem" ubuntu@ec2-3-128-203-97.us-east-2.compute.amazonaws.com
-cd innovation-workflow
+cd innovation-workflow/backend
 python3 -m venv env
 source env/bin/activate
 pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
 
 
-
-# Add 4GB swap
-sudo fallocate -l 4G /swapfile
+# Add 2GB swap
+sudo swapoff -a
+sudo rm /swapfile
+sudo dd if=/dev/zero of=/swapfile bs=1M count=2048  # Creates a 2GB swap instead
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
-
 # Verify swap
 free -h
 ```
