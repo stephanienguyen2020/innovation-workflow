@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+export const dynamic = "force-dynamic";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function POST(
@@ -34,12 +36,12 @@ export async function POST(
     }
 
     // Construct the URL to save progress to the backend
-    const apiUrl = `${API_URL}/projects/${projectId}/stages/${stage}`;
+    const apiUrl = `${API_URL}/api/projects/${projectId}/stages/${stage}`;
     console.log(`Saving progress to ${apiUrl}`);
 
     // Call the backend API to save progress
     const response = await fetch(apiUrl, {
-      method: "PUT",
+      method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",

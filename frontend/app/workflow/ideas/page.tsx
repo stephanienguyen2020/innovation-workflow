@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useEffect, Suspense } from "react";
 import { ChevronDown, Rocket, Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -27,7 +29,7 @@ interface Stage {
   };
 }
 
-export default function IdeationPage() {
+function IdeationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams.get("projectId");
@@ -558,5 +560,19 @@ export default function IdeationPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function IdeationPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }
+    >
+      <IdeationContent />
+    </Suspense>
   );
 }

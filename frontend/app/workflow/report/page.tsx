@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Download, ArrowLeft, AlertCircle } from "lucide-react";
 import jsPDF from "jspdf";
@@ -18,7 +20,7 @@ interface ReportData {
   };
 }
 
-export default function ReportPage() {
+function ReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams.get("projectId");
@@ -481,5 +483,19 @@ export default function ReportPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ReportPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }
+    >
+      <ReportContent />
+    </Suspense>
   );
 }
