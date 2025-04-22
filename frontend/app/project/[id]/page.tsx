@@ -30,6 +30,7 @@ interface Stage {
       id: string;
       idea: string;
       explanation: string;
+      detailed_explanation?: string;
     };
     [key: string]: any;
   };
@@ -173,7 +174,7 @@ export default function ProjectDetailsPage() {
       case 3: // Product Ideas
         return (
           <div className="space-y-4">
-            <h3 className="text-xl font-semibold">Product Ideas</h3>
+            <h3 className="text-xl font-semibold">Ideas</h3>
             {stage.data.product_ideas && stage.data.product_ideas.length > 0 ? (
               <div className="space-y-4">
                 {stage.data.product_ideas.map((idea, index) => (
@@ -196,26 +197,17 @@ export default function ProjectDetailsPage() {
       case 4: // Final Report
         return (
           <div className="space-y-4">
-            <h3 className="text-xl font-semibold">Final Report</h3>
-            <div className="bg-gray-50 p-4 rounded-lg space-y-4">
-              {stage.data.chosen_problem ? (
-                <div>
-                  <h4 className="font-medium">Chosen Problem:</h4>
-                  <p>{stage.data.chosen_problem.problem}</p>
-                  <p className="text-gray-700 mt-2">
-                    {stage.data.chosen_problem.explanation}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-gray-500">No chosen problem available.</p>
-              )}
-
+            {/* Chosen Solution Section */}
+            <div className="space-y-4">
+              <h4 className="text-xl font-semibold">Chosen Solution</h4>
               {stage.data.chosen_solution ? (
-                <div className="mt-4">
-                  <h4 className="font-medium">Chosen Solution:</h4>
-                  <p>{stage.data.chosen_solution.idea}</p>
-                  <p className="text-gray-700 mt-2">
-                    {stage.data.chosen_solution.explanation}
+                <div className="bg-blue-50 p-6 rounded-xl">
+                  <h5 className="text-xl font-medium mb-2">
+                    {stage.data.chosen_solution.idea}
+                  </h5>
+                  <p className="text-gray-700">
+                    {stage.data.chosen_solution.detailed_explanation ||
+                      stage.data.chosen_solution.explanation}
                   </p>
                 </div>
               ) : (
@@ -309,7 +301,7 @@ export default function ProjectDetailsPage() {
                   router.push(`/workflow/ideas?projectId=${project._id}`);
                 }
               }}
-              className="inline-flex items-center justify-center bg-black text-white rounded-[10px] px-4 py-2 text-sm font-medium hover:opacity-90"
+              className="inline-flex items-center justify-center bg-gray-700 text-white rounded-[10px] px-4 py-2 text-sm font-medium hover:opacity-90"
             >
               Edit Project
             </button>

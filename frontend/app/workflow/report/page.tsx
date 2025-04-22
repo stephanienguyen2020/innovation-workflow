@@ -67,6 +67,9 @@ export default function ReportPage() {
         const data = await response.json();
         console.log("Report data:", data);
         setReportData(data);
+
+        // Auto-save progress once report data is loaded
+        await autoSaveProgress(data);
       } catch (err) {
         console.error("Error generating report:", err);
         setError((err as Error).message || "Failed to generate report");
@@ -78,6 +81,65 @@ export default function ReportPage() {
 
     generateReport();
   }, [projectId, solutionId]);
+
+  // Function to auto-save progress
+  const autoSaveProgress = async (reportData: ReportData) => {
+    try {
+      console.log("Starting auto-save with data:", reportData);
+
+      // Make API call to save progress
+      const saveResponse = await fetch(
+        `/api/projects/${projectId}/save-progress`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            stage: 4,
+            data: {
+              analysis: reportData.analysis,
+              // Format chosen problem to match the expected structure in project/[id]/page.tsx
+              chosen_problem: {
+                id: "chosen-problem-id",
+                problem: reportData.chosen_problem.statement,
+                explanation: reportData.chosen_problem.explanation,
+              },
+              // Format chosen solution to match the expected structure in project/[id]/page.tsx
+              chosen_solution: {
+                id: solutionId || "chosen-solution-id",
+                idea: reportData.chosen_solution.idea,
+                detailed_explanation: reportData.chosen_solution.explanation,
+                problem_id: "chosen-problem-id",
+              },
+            },
+            completed: true,
+          }),
+        }
+      );
+
+      if (!saveResponse.ok) {
+        const errorData = await saveResponse.json();
+        console.error("Error auto-saving progress:", errorData);
+      } else {
+        const savedData = await saveResponse.json();
+        console.log("Progress auto-saved successfully:", savedData);
+
+        // Also update the project status to completed
+        await fetch(`/api/projects/${projectId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: "completed",
+          }),
+        });
+      }
+    } catch (err) {
+      console.error("Error in auto-save:", err);
+    }
+  };
 
   // Reset download status messages after 5 seconds
   useEffect(() => {
@@ -326,6 +388,11 @@ export default function ReportPage() {
               {step < 4 && <div className="w-12 h-0.5 bg-black" />}
             </div>
           ))}
+        </div>
+
+        {/* Auto-save indicator */}
+        <div className="text-sm text-gray-500 mt-2">
+          Progress is automatically saved
         </div>
       </div>
 
