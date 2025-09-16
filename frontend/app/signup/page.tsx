@@ -14,17 +14,26 @@ function SignupContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [redirectMessage, setRedirectMessage] = useState("");
+  const [isHydrated, setIsHydrated] = useState(false);
   const { signup, loading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  // Handle hydration first
   useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    // Only run after hydration
+    if (!isHydrated) return;
+
     // Check if redirected from a protected page
     const redirect = searchParams.get("redirect");
     if (redirect) {
       setRedirectMessage("Create an account to continue");
     }
-  }, [searchParams]);
+  }, [searchParams, isHydrated]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,16 +50,45 @@ function SignupContent() {
     }
 
     try {
-      await signup(firstName, lastName, email, password);
-      // After successful signup, redirect to login page with a success message
-      router.push(
-        "/login?message=Account created successfully! Please log in."
-      );
+      const result = await signup(firstName, lastName, email, password);
+      console.log("Signup result:", result);
+
+      // Check if the signup requires email verification
+      if (result?.requires_verification) {
+        // Redirect to email verification page with email parameter
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`);
+      } else if (result?.is_admin) {
+        // Admin account created, redirect to login with admin message
+        router.push(
+          "/login?message=Admin account created successfully! You can log in immediately."
+        );
+      } else {
+        // For backward compatibility, redirect to login
+        router.push(
+          "/login?message=Account created successfully! Please log in."
+        );
+      }
     } catch (err) {
       console.error("Signup error:", err);
       setError(err instanceof Error ? err.message : "Error creating account");
     }
   };
+
+  // Show loading until hydrated
+  if (!isHydrated) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6 p-8 bg-white rounded-[10px] shadow-md">
+          <div className="text-center">
+            <h2 className="mt-6 text-3xl font-bold">Loading...</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Preparing signup form...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-4">

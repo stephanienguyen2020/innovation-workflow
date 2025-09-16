@@ -13,3 +13,4 @@ yarn-debug.log*
 
 /backend/.env
 
+.vercel

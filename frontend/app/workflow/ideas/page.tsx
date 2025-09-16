@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect, Suspense } from "react";
-import { ChevronDown, Rocket, Loader2 } from "lucide-react";
+import { ChevronDown, Rocket, Loader2, RefreshCw } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface ProductIdea {
@@ -11,6 +11,7 @@ interface ProductIdea {
   idea: string;
   detailed_explanation: string;
   problem_id: string;
+  image_url?: string;
 }
 
 interface ProblemStatement {
@@ -27,6 +28,23 @@ interface Stage {
     analysis?: string;
     [key: string]: any;
   };
+}
+
+function formatDetailedExplanation(text: string): string {
+  if (!text) return "";
+
+  // Replace **Section Headers**: with bold formatting and add line breaks
+  let formatted = text
+    // Convert **Header**: to HTML bold with line breaks
+    .replace(/\*\*(.*?)\*\*:/g, "<br/><strong>$1:</strong>")
+    // Convert line breaks to HTML
+    .replace(/\n/g, "<br/>")
+    // Convert bullet points if any
+    .replace(/^- /gm, "• ")
+    // Clean up any double line breaks at the start
+    .replace(/^<br\/>/, "");
+
+  return formatted;
 }
 
 function IdeationContent() {
@@ -47,6 +65,9 @@ function IdeationContent() {
   const [researchSummary, setResearchSummary] = useState<string>("");
   const [isHistoricalExpanded, setIsHistoricalExpanded] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regeneratingImageId, setRegeneratingImageId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     if (!projectId) {
@@ -222,9 +243,58 @@ function IdeationContent() {
     fetchData();
   }, [projectId, problemId, customProblem, customExplanation]);
 
-  const handleIdeaToggle = (id: string) => {
+  const handleIdeaSelect = (id: string) => {
+    setSelectedIdea(id);
+  };
+
+  const handleToggleExpansion = (id: string) => {
+    setExpandedIdea(expandedIdea === id ? null : id);
+  };
+
+  const handleBoxClick = (id: string) => {
     setSelectedIdea(id);
     setExpandedIdea(expandedIdea === id ? null : id);
+  };
+
+  const handleRegenerateImage = async (
+    ideaId: string,
+    event: React.MouseEvent
+  ) => {
+    event.stopPropagation(); // Prevent triggering the box click
+
+    if (!projectId) return;
+
+    setRegeneratingImageId(ideaId);
+
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/ideas/${ideaId}/regenerate-image`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to regenerate image");
+      }
+
+      const result = await response.json();
+
+      // Update the product ideas with the new image URL
+      setProductIdeas((prevIdeas) =>
+        prevIdeas.map((idea) =>
+          idea.id === ideaId ? { ...idea, image_url: result.image_url } : idea
+        )
+      );
+    } catch (error) {
+      console.error("Error regenerating image:", error);
+      alert("Failed to regenerate image. Please try again.");
+    } finally {
+      setRegeneratingImageId(null);
+    }
   };
 
   const handleRegenerateIdeas = async () => {
@@ -452,7 +522,7 @@ function IdeationContent() {
                 >
                   <div
                     className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => handleIdeaToggle(idea.id)}
+                    onClick={() => handleBoxClick(idea.id)}
                   >
                     <div className="flex items-center gap-4">
                       <input
@@ -460,15 +530,12 @@ function IdeationContent() {
                         id={idea.id}
                         name="idea"
                         checked={selectedIdea === idea.id}
-                        onChange={() => handleIdeaToggle(idea.id)}
-                        className="w-5 h-5 accent-blue-600"
+                        readOnly
+                        className="w-5 h-5 accent-blue-600 pointer-events-none"
                       />
-                      <label
-                        htmlFor={idea.id}
-                        className="text-lg font-medium cursor-pointer"
-                      >
+                      <span className="text-lg font-medium select-none">
                         {idea.idea}
-                      </label>
+                      </span>
                     </div>
                     <ChevronDown
                       className={`w-6 h-6 transition-transform ${
@@ -478,9 +545,56 @@ function IdeationContent() {
                   </div>
                   {expandedIdea === idea.id && (
                     <div className="p-5 pl-14 border-t border-gray-100 bg-white">
-                      <p className="text-gray-700 text-base leading-relaxed">
-                        {idea.detailed_explanation}
-                      </p>
+                      {/* Image Section */}
+                      {idea.image_url && (
+                        <div className="mb-6">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-semibold text-gray-800">
+                              Product Concept Visualization
+                            </h4>
+                            <button
+                              onClick={(e) => handleRegenerateImage(idea.id, e)}
+                              disabled={regeneratingImageId === idea.id}
+                              className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+                              title="Regenerate image"
+                            >
+                              <RefreshCw
+                                className={`w-4 h-4 ${
+                                  regeneratingImageId === idea.id
+                                    ? "animate-spin"
+                                    : ""
+                                }`}
+                              />
+                              {regeneratingImageId === idea.id
+                                ? "Generating..."
+                                : "Regenerate"}
+                            </button>
+                          </div>
+                          <div className="relative rounded-lg overflow-hidden bg-gray-100">
+                            <img
+                              src={idea.image_url}
+                              alt={`Concept visualization for ${idea.idea}`}
+                              className="w-full max-w-2xl h-auto object-cover"
+                              style={{ aspectRatio: "16/9" }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Details Section */}
+                      <div>
+                        <h4 className="font-semibold text-gray-800 mb-3">
+                          Product Details
+                        </h4>
+                        <div
+                          className="text-gray-700 text-base leading-relaxed"
+                          dangerouslySetInnerHTML={{
+                            __html: formatDetailedExplanation(
+                              idea.detailed_explanation
+                            ),
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>

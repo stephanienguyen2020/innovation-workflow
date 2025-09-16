@@ -17,6 +17,7 @@ interface ReportData {
   chosen_solution: {
     idea: string;
     explanation: string;
+    image_url?: string;
   };
 }
 
@@ -423,12 +424,35 @@ function ReportContent() {
           <div className="space-y-4">
             <h3 className="text-2xl font-semibold">Chosen Solution</h3>
             <div className="bg-blue-50 p-6 rounded-xl">
-              <h4 className="text-xl font-medium mb-2">
+              <h4 className="text-xl font-medium mb-4">
                 {reportData.chosen_solution.idea}
               </h4>
-              <p className="text-gray-700">
-                {reportData.chosen_solution.explanation}
-              </p>
+
+              {/* Product Concept Image */}
+              {reportData.chosen_solution.image_url && (
+                <div className="mb-6">
+                  <h5 className="font-semibold text-gray-800 mb-3">
+                    Product Concept Visualization
+                  </h5>
+                  <div className="relative rounded-lg overflow-hidden bg-white p-2">
+                    <img
+                      src={reportData.chosen_solution.image_url}
+                      alt={`Concept visualization for ${reportData.chosen_solution.idea}`}
+                      className="w-full max-w-3xl h-auto object-cover rounded-md mx-auto"
+                      style={{ aspectRatio: "16/9" }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h5 className="font-semibold text-gray-800 mb-2">
+                  Solution Details
+                </h5>
+                <p className="text-gray-700 whitespace-pre-line">
+                  {reportData.chosen_solution.explanation}
+                </p>
+              </div>
             </div>
           </div>
         </div>

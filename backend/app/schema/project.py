@@ -16,6 +16,7 @@ class ProductIdea(BaseModel):
     idea: str
     detailed_explanation: str
     problem_id: Optional[str] = None  # Reference to the problem this idea addresses
+    image_url: Optional[str] = None  # URL of the generated concept image
 
 class Stage1Data(BaseModel):
     analysis: Optional[str] = None

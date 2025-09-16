@@ -342,7 +342,8 @@ async def get_project_pdf_data(db: AsyncIOMotorDatabase, project_id: str) -> Dic
         },
         "chosen_solution": {
             "idea": chosen_solution.get("idea", ""),
-            "explanation": chosen_solution.get("detailed_explanation", "")
+            "explanation": chosen_solution.get("detailed_explanation", ""),
+            "image_url": chosen_solution.get("image_url", None)
         }
     }
 

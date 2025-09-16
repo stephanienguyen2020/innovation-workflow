@@ -176,6 +176,17 @@ function ProblemDefinitionContent() {
 
   const handleProblemSelect = (id: string) => {
     setSelectedProblem(id);
+    if (showWarning) {
+      setShowWarning(false);
+    }
+  };
+
+  const handleToggleExpansion = (id: string) => {
+    setExpandedProblem(expandedProblem === id ? null : id);
+  };
+
+  const handleBoxClick = (id: string) => {
+    setSelectedProblem(id);
     setExpandedProblem(expandedProblem === id ? null : id);
     if (showWarning) {
       setShowWarning(false);
@@ -397,7 +408,7 @@ function ProblemDefinitionContent() {
 
         <h2 className="text-4xl font-bold">Problem Definition</h2>
         <p className="text-2xl">
-          select from the following problem statement or enter your own
+          Select from the following problem statement or enter your own
         </p>
 
         {/* Loading State */}
@@ -431,8 +442,8 @@ function ProblemDefinitionContent() {
             {problemStatements.map((problem) => (
               <div key={problem.id} className="border-b border-gray-200">
                 <div
-                  className="flex items-center justify-between py-4 cursor-pointer"
-                  onClick={() => handleProblemSelect(problem.id)}
+                  className="flex items-center justify-between py-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 rounded-lg px-2"
+                  onClick={() => handleBoxClick(problem.id)}
                 >
                   <div className="flex items-center gap-4">
                     <input
@@ -440,18 +451,15 @@ function ProblemDefinitionContent() {
                       id={problem.id}
                       name="problem"
                       checked={selectedProblem === problem.id}
-                      onChange={() => handleProblemSelect(problem.id)}
-                      className="w-5 h-5"
+                      readOnly
+                      className="w-5 h-5 pointer-events-none"
                     />
-                    <label
-                      htmlFor={problem.id}
-                      className="text-lg cursor-pointer"
-                    >
+                    <span className="text-lg select-none">
                       {problem.problem}
-                    </label>
+                    </span>
                   </div>
                   <ChevronDown
-                    className={`w-6 h-6 transition-transform ${
+                    className={`w-6 h-6 transition-transform duration-200 ${
                       expandedProblem === problem.id ? "rotate-180" : ""
                     }`}
                   />

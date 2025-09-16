@@ -55,8 +55,28 @@ function LoginContent() {
 
       // Use window.location.href for a full page reload after login
       window.location.href = redirectTo;
-    } catch (err) {
-      setError("Invalid email or password");
+    } catch (err: any) {
+      console.error("Login error:", err);
+
+      // Check if the error is about email verification
+      if (err.message && err.message.includes("Email not verified")) {
+        setError(
+          "Email not verified. Please verify your email before logging in."
+        );
+        // Add a link to resend verification
+        setTimeout(() => {
+          const shouldRedirect = window.confirm(
+            "Would you like to go to the email verification page?"
+          );
+          if (shouldRedirect) {
+            window.location.href = `/verify-email?email=${encodeURIComponent(
+              email
+            )}`;
+          }
+        }, 1000);
+      } else {
+        setError("Invalid email or password");
+      }
     }
   };
 

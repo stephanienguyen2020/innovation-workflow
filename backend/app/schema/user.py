@@ -1,10 +1,12 @@
 from passlib.context import CryptContext
 from app.constant.config import JWT_SECRET
 from pydantic import BaseModel, EmailStr
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 import jwt
 import os
+import random
+import string
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 
@@ -28,6 +30,15 @@ JWT_ALGORITHM = "HS256"
 def create_access_token(data: dict) -> str:
     return jwt.encode(data, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+# Email verification code generation
+def generate_verification_code() -> str:
+    """Generate a 6-digit verification code"""
+    return ''.join(random.choices(string.digits, k=6))
+
+def create_verification_code_expiry() -> datetime:
+    """Create expiry time for verification code (15 minutes from now)"""
+    return datetime.now(timezone.utc) + timedelta(minutes=15)
+
 # User Models
 class UserBase(BaseModel):
     first_name: str
@@ -42,6 +53,9 @@ class UserDB(UserBase):
     hashed_password: str
     last_login: Optional[datetime] = None
     role: Optional[str] = 'user'
+    is_email_verified: bool = False
+    email_verification_code: Optional[str] = None
+    email_verification_expires: Optional[datetime] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -61,6 +75,18 @@ class UserProfile(BaseModel):
     last_login: Optional[datetime] = None
     is_active: bool
     role: str
+    is_email_verified: bool
 
     class Config:
         from_attributes = True
+
+# Email verification models
+class EmailVerificationRequest(BaseModel):
+    email: EmailStr
+
+class EmailVerificationCode(BaseModel):
+    email: EmailStr
+    verification_code: str
+
+class ResendVerificationCode(BaseModel):
+    email: EmailStr

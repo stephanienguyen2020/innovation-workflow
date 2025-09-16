@@ -15,6 +15,11 @@ def write_log(
     curr_date = datetime.now()
     filename = get_csv_filename(curr_date)
     
+    # Create logs directory if it doesn't exist
+    log_dir = os.path.dirname(filename)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+    
     if not os.path.exists(filename):
         with open(filename, mode='a', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)

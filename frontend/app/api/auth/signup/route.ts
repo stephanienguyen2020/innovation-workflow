@@ -53,13 +53,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Format user data for the client
+    // Check if this is email verification flow or direct login
+    if (data.requires_verification) {
+      // Return verification data for email verification flow
+      return NextResponse.json({
+        message: data.message,
+        email: data.email,
+        requires_verification: true,
+        is_admin: data.is_admin || false,
+      });
+    }
+
+    // Format user data for the client (for direct login after signup)
     const userDataForClient = {
       id: data.user_id,
       name: `${first_name} ${last_name}`.trim(),
       email: email,
       access_token: data.access_token,
       token_type: data.token_type,
+      is_admin: data.is_admin || false,
     };
 
     // Set cookie with access token if available
@@ -78,6 +90,7 @@ export async function POST(request: NextRequest) {
 
     return responseObj;
   } catch (error) {
+    console.log("API_URL", API_URL);
     console.error("Signup error:", error);
     return NextResponse.json(
       { detail: "An error occurred during signup" },

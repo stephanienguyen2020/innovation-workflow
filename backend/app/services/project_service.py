@@ -3,6 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 import tempfile
 import os
 import json
+import logging
 from datetime import datetime
 from typing import List, Optional, Dict
 import uuid
@@ -25,8 +26,12 @@ from app.database.query.db_project import (
 from app.schema.project import Project, Stage, Stage1Data
 from app.services.rag_service import rag_service
 from app.services.agent_service import agent_service
+from app.services.image_service import ImageGenerationService
 from app.constant.status import StageStatus
 from app.prompts.assistant import ProjectPrompts
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # Simplified Pydantic model for analysis
 class DocumentAnalysis(BaseModel):
@@ -235,15 +240,28 @@ class ProjectService:
                 "problem_domain": project.problem_domain
             }
         )
-        print("Agent response for problem statements:", response)
         
         try:
+            # Check if response is empty or None
+            if not response or (isinstance(response, str) and not response.strip()):
+                raise HTTPException(
+                    status_code=500, 
+                    detail="Agent returned empty response. Check model configuration and prompt formatting."
+                )
+            
             # Handle different response formats
             if isinstance(response, str) and "Sorry, I can't assist with that" in response:
                 raise HTTPException(status_code=500, detail="Failed to generate problem statements")
                 
             # Parse the response into structured format
-            problem_data = response if isinstance(response, dict) else json.loads(response)
+            if isinstance(response, dict):
+                problem_data = response
+            else:
+                # Clean up response string before parsing
+                response_str = str(response).strip()
+                if not response_str:
+                    raise HTTPException(status_code=500, detail="Agent returned empty string response")
+                problem_data = json.loads(response_str)
             
             # Validate problem statements structure
             if not problem_data.get("problem_statements") or not isinstance(problem_data["problem_statements"], list):
@@ -280,6 +298,8 @@ class ProjectService:
         selected_problem_id: Optional[str] = None,
         custom_problem: Optional[str] = None
     ) -> Stage:
+        logger.info(f"🚀 Starting process_stage_3 for project {project_id}")
+        print(f"🚀 Starting process_stage_3 for project {project_id}")
         """
         Process stage 3: Generate product ideas based on a single selected or custom problem statement.
         
@@ -381,7 +401,7 @@ class ProjectService:
             ProjectPrompts.STAGE_3_IDEAS,
             context={
                 "analysis": analysis,
-                "problem_statement": selected_problem,  # Pass single selected problem
+                "problem_statements": [selected_problem],  # Pass as list to match template expectation
                 "problem_domain": project.problem_domain
             }
         )
@@ -389,10 +409,33 @@ class ProjectService:
         try:
             # The response should already be in structured format
             ideas_data = response if isinstance(response, dict) else json.loads(response)
+            logger.info(f"✅ Successfully parsed ideas data, found {len(ideas_data.get('product_ideas', []))} ideas")
+            print(f"✅ Successfully parsed ideas data, found {len(ideas_data.get('product_ideas', []))} ideas")
             
-            # Add problem reference to all ideas
+            # Initialize image generation service
+            image_service = ImageGenerationService()
+            logger.info("✅ ImageGenerationService initialized")
+            print("✅ ImageGenerationService initialized")
+            
+            # Add problem reference and generate images for all ideas
             for idea in ideas_data["product_ideas"]:
                 idea["problem_id"] = selected_problem["id"]
+                
+                # Generate image for each idea
+                try:
+                    logger.info(f"Starting image generation for idea: {idea['idea']}")
+                    image_url = await image_service.generate_product_image(
+                        idea_title=idea["idea"],
+                        detailed_explanation=idea["detailed_explanation"],
+                        problem_domain=project.problem_domain
+                    )
+                    idea["image_url"] = image_url
+                    logger.info(f"Generated image for idea '{idea['idea']}': {image_url}")
+                    print(f"✅ Generated image for idea '{idea['idea']}': {image_url}")
+                except Exception as e:
+                    logger.error(f"Failed to generate image for idea '{idea['idea']}': {str(e)}", exc_info=True)
+                    print(f"❌ Failed to generate image for idea '{idea['idea']}': {str(e)}")
+                    idea["image_url"] = None
             
             # Update stage 3 with product ideas
             updated_project = await update_stage_3(
@@ -494,6 +537,86 @@ class ProjectService:
             raise HTTPException(
                 status_code=400,
                 detail=str(e)
+            )
+
+    @staticmethod
+    async def regenerate_idea_image(
+        db: AsyncIOMotorDatabase,
+        project_id: str,
+        idea_id: str,
+        user_id: str
+    ) -> Dict:
+        """
+        Regenerate image for a specific product idea.
+        
+        Args:
+            db: Database session
+            project_id: Project ID
+            idea_id: ID of the idea to regenerate image for
+            user_id: User ID for authorization
+            
+        Returns:
+            Dictionary containing the updated idea with new image URL
+        """
+        # Get project and validate access
+        project = await db_get_project(db, project_id, user_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
+        # Find stage 3
+        stage_3 = next((stage for stage in project.stages if stage.stage_number == 3), None)
+        if not stage_3 or stage_3.status != StageStatus.COMPLETED:
+            raise HTTPException(status_code=400, detail="Stage 3 must be completed first")
+            
+        # Find the specific idea
+        product_ideas = stage_3.data.get("product_ideas", [])
+        idea_index = None
+        target_idea = None
+        
+        for i, idea in enumerate(product_ideas):
+            if idea.get("id") == idea_id:
+                idea_index = i
+                target_idea = idea
+                break
+                
+        if target_idea is None:
+            raise HTTPException(status_code=404, detail="Idea not found")
+            
+        # Initialize image service and regenerate image
+        image_service = ImageGenerationService()
+        
+        try:
+            new_image_url = await image_service.regenerate_product_image(
+                idea_title=target_idea["idea"],
+                detailed_explanation=target_idea["detailed_explanation"],
+                problem_domain=project.problem_domain
+            )
+            
+            # Update the idea with new image URL
+            product_ideas[idea_index]["image_url"] = new_image_url
+            
+            # Update stage 3 in database
+            updated_project = await update_stage_3(
+                db,
+                project_id,
+                {
+                    "product_ideas": product_ideas
+                }
+            )
+            
+            print(f"Regenerated image for idea '{target_idea['idea']}': {new_image_url}")
+            
+            return {
+                "idea_id": idea_id,
+                "image_url": new_image_url,
+                "success": True
+            }
+            
+        except Exception as e:
+            print(f"Failed to regenerate image for idea '{target_idea['idea']}': {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to regenerate image: {str(e)}"
             )
 
     @staticmethod

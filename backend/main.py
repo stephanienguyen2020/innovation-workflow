@@ -22,6 +22,16 @@ async def lifespan(app: FastAPI):
     from app.services.rag_service import rag_service
     await rag_service.initialize()
     
+    # Initialize admin account
+    from app.services.auth_service import AuthService
+    from app.database.query.db_auth import DBAuth
+    try:
+        db_auth = DBAuth(session_manager.db)
+        auth_service = AuthService(db_auth)
+        await auth_service.ensure_admin_account_exists()
+    except Exception as e:
+        print(f"Warning: Failed to initialize admin account: {str(e)}")
+    
     yield
     # Close MongoDB connection when app shuts down
     if session_manager.client is not None:

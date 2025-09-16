@@ -200,3 +200,15 @@ async def generate_final_document(
         chosen_solution_id,
         user.id
     )
+
+@router.post("/{project_id}/ideas/{idea_id}/regenerate-image", response_model=Dict)
+async def regenerate_idea_image(
+    project_id: str = Path(..., description="Project ID"),
+    idea_id: str = Path(..., description="Product Idea ID"),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+) -> Dict:
+    """
+    Regenerate the concept image for a specific product idea.
+    """
+    return await project_service.regenerate_idea_image(db, project_id, idea_id, user.id)

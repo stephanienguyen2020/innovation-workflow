@@ -15,3 +15,9 @@ IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 # Host and port for uvicorn server
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))
+
+# Admin account configuration
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+ADMIN_FIRST_NAME = os.getenv("ADMIN_FIRST_NAME")
+ADMIN_LAST_NAME = os.getenv("ADMIN_LAST_NAME")

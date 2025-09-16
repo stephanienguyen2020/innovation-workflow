@@ -88,7 +88,8 @@ async def get_current_user(
             updated_at=user["updated_at"],
             last_login=user.get("last_login"),
             is_active=user.get("is_active", True),
-            role=user.get("role", "user")
+            role=user.get("role", "user"),
+            is_email_verified=user.get("is_email_verified", False)
         )
         
         return user_profile

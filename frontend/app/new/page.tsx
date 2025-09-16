@@ -130,6 +130,13 @@ export default function NewProject() {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !isLoading) {
+      e.preventDefault();
+      handleStartWorkflow();
+    }
+  };
+
   // If not mounted yet, don't render anything to prevent hydration mismatch
   if (!mounted) {
     return null;
@@ -150,6 +157,7 @@ export default function NewProject() {
                 type="text"
                 value={problem}
                 onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
                 placeholder="Enter here"
                 className={`w-full p-4 text-lg border rounded-[10px] focus:outline-none focus:ring-2 focus:ring-[#001DFA]
                            ${

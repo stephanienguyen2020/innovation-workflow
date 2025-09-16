@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from app.schema.user import UserCreate
+from app.schema.user import UserCreate, EmailVerificationCode, ResendVerificationCode
 from app.database.database import get_db
 from app.database.query.db_auth import DBAuth
 from app.services.auth_service import AuthService
@@ -24,3 +24,17 @@ async def logout(db=Depends(get_db)):
     db_auth = DBAuth(db)
     auth_service = AuthService(db_auth)
     return await auth_service.logout()
+
+@router.post("/verify-email")
+async def verify_email(verification_data: EmailVerificationCode, db=Depends(get_db)):
+    """Verify email using verification code"""
+    db_auth = DBAuth(db)
+    auth_service = AuthService(db_auth)
+    return await auth_service.verify_email(verification_data)
+
+@router.post("/resend-verification")
+async def resend_verification_code(resend_data: ResendVerificationCode, db=Depends(get_db)):
+    """Resend verification code to user's email"""
+    db_auth = DBAuth(db)
+    auth_service = AuthService(db_auth)
+    return await auth_service.resend_verification_code(resend_data)

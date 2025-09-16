@@ -30,6 +30,13 @@ type StoredUserData = {
   token_type: string;
 };
 
+type SignupResult = {
+  requires_verification?: boolean;
+  is_admin?: boolean;
+  message?: string;
+  email?: string;
+};
+
 type AuthContextType = {
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
@@ -38,7 +45,7 @@ type AuthContextType = {
     lastName: string,
     email: string,
     password: string
-  ) => Promise<void>;
+  ) => Promise<SignupResult>;
   logout: () => Promise<void>;
   loading: boolean;
 };
@@ -51,6 +58,7 @@ const USER_STORAGE_KEY = "innovation_workflow_user";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // Function to retrieve user from localStorage
   const getUserFromStorage = () => {
@@ -79,13 +87,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (typeof window !== "undefined") {
         console.log("Saving user to storage:", loginResponse);
         // Store both user data and access token
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
-          userId: loginResponse.userId,
-          name: loginResponse.name,
-          email: loginResponse.email,
-          access_token: loginResponse.access_token,
-          token_type: "bearer"
-        } as StoredUserData));
+        localStorage.setItem(
+          USER_STORAGE_KEY,
+          JSON.stringify({
+            userId: loginResponse.userId,
+            name: loginResponse.name,
+            email: loginResponse.email,
+            access_token: loginResponse.access_token,
+            token_type: "bearer",
+          } as StoredUserData)
+        );
       }
     } catch (error) {
       console.error("Error saving user to storage:", error);
@@ -103,7 +114,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Handle hydration first
   useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    // Only run after hydration
+    if (!isHydrated) return;
+
     // Check if user is logged in on initial load
     const checkUserLoggedIn = async () => {
       try {
@@ -134,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     checkUserLoggedIn();
-  }, []);
+  }, [isHydrated]);
 
   const login = async (email: string, password: string) => {
     setLoading(true);
@@ -149,11 +168,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error("Login failed");
-      }
-
       const data = await response.json();
+
+      if (!response.ok) {
+        // Check for specific error codes
+        if (
+          response.status === 403 &&
+          data.errorCode === "EMAIL_NOT_VERIFIED"
+        ) {
+          throw new Error(
+            "Email not verified. Please verify your email before logging in."
+          );
+        }
+        throw new Error(data.detail || "Login failed");
+      }
       console.log("Login successful, response data:", data);
 
       // Create login response object with both user data and token
@@ -161,14 +189,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userId: data.userId,
         name: data.name,
         email: data.email,
-        access_token: data.access_token
+        access_token: data.access_token,
       };
 
       // Set the user state (only with user info, not token)
       setUser({
         id: loginResponse.userId,
         name: loginResponse.name,
-        email: loginResponse.email
+        email: loginResponse.email,
       });
 
       // Store complete login response including token in localStorage
@@ -215,11 +243,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           data,
         });
         throw new Error(
-          data.detail || "Failed to create account. Please try again."
+          data.detail ||
+            data.message ||
+            "Failed to create account. Please try again."
         );
       }
 
-      // Return the response data instead of setting the user
+      // Return the response data for the frontend to handle email verification
       return data;
     } catch (error) {
       console.error("Signup error:", error);
@@ -248,6 +278,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   };
+
+  // Don't render children until after hydration to prevent hydration mismatches
+  if (!isHydrated) {
+    return (
+      <AuthContext.Provider
+        value={{ user: null, login, signup, logout, loading: true }}
+      >
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="text-lg">Loading...</div>
+        </div>
+      </AuthContext.Provider>
+    );
+  }
 
   return (
     <AuthContext.Provider value={{ user, login, signup, logout, loading }}>
