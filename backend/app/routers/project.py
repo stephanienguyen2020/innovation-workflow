@@ -212,3 +212,11 @@ async def regenerate_idea_image(
     Regenerate the concept image for a specific product idea.
     """
     return await project_service.regenerate_idea_image(db, project_id, idea_id, user.id)
+
+@router.get("/image-proxy")
+async def image_proxy(image_url: str = Query(..., description="The URL of the image to proxy")):
+    """
+    Proxy an image from an external URL to avoid CORS issues in the frontend.
+    """
+    image_bytes = await project_service.proxy_image(image_url)
+    return Response(content=image_bytes, media_type="image/png")

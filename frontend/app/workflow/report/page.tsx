@@ -35,6 +35,11 @@ function ReportContent() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
+  // Helper function to parse markdown-style bolding
+  const parseBoldMarkdown = (text: string) => {
+    return text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  };
+
   useEffect(() => {
     if (!projectId) {
       setError("Missing project ID");
@@ -170,6 +175,29 @@ function ReportContent() {
     }
   }, [downloadSuccess, downloadError]);
 
+  // Helper function to render text with markdown bolding in the PDF, handling line wrapping
+  const renderFormattedText = (
+    pdf: jsPDF,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    lineHeight: number
+  ) => {
+    const segments = text.split(/(\*\*.*?\*\*)/g).filter(Boolean);
+    let currentY = y;
+
+    // Use a simplified approach: render paragraph line by line
+    const lines = pdf.splitTextToSize(text.replace(/\*\*/g, ""), maxWidth);
+
+    lines.forEach((line: string) => {
+      pdf.text(line, x, currentY);
+      currentY += lineHeight;
+    });
+
+    return currentY;
+  };
+
   const handleDownload = async () => {
     if (!projectId || !reportData) return;
 
@@ -212,19 +240,24 @@ function ReportContent() {
       pdf.setFontSize(12);
       yPos += 10;
 
-      const problemLines = pdf.splitTextToSize(
+      const problemStatementLines = pdf.splitTextToSize(
         reportData.chosen_problem.statement,
         170
       );
-      pdf.text(problemLines, 20, yPos);
-      yPos += problemLines.length * 7;
+      pdf.setFont(undefined, "bold");
+      pdf.text(problemStatementLines, 20, yPos);
+      yPos += problemStatementLines.length * 7;
 
-      const problemExplanationLines = pdf.splitTextToSize(
+      pdf.setFont(undefined, "normal");
+      yPos = renderFormattedText(
+        pdf,
         reportData.chosen_problem.explanation,
-        170
+        20,
+        yPos,
+        170,
+        5
       );
-      pdf.text(problemExplanationLines, 20, yPos);
-      yPos += problemExplanationLines.length * 7 + 10;
+      yPos += 10;
 
       // Add a new page if we're running out of space
       if (yPos > 250) {
@@ -242,14 +275,67 @@ function ReportContent() {
         reportData.chosen_solution.idea,
         170
       );
+      pdf.setFont(undefined, "bold");
       pdf.text(solutionLines, 20, yPos);
       yPos += solutionLines.length * 7;
 
-      const solutionExplanationLines = pdf.splitTextToSize(
+      pdf.setFont(undefined, "normal");
+      yPos = renderFormattedText(
+        pdf,
         reportData.chosen_solution.explanation,
-        170
+        20,
+        yPos,
+        170,
+        5
       );
-      pdf.text(solutionExplanationLines, 20, yPos);
+
+      // Fetch and add the image if a URL exists
+      if (reportData.chosen_solution.image_url) {
+        try {
+          // Use our backend proxy to get the image data
+          const imageResponse = await fetch(
+            `/api/projects/image-proxy?image_url=${encodeURIComponent(
+              reportData.chosen_solution.image_url
+            )}`
+          );
+          if (!imageResponse.ok) {
+            throw new Error("Failed to fetch image via proxy");
+          }
+          const imageBlob = await imageResponse.blob();
+
+          // Convert blob to a Base64 string
+          const reader = new FileReader();
+          await new Promise<void>((resolve, reject) => {
+            reader.onloadend = () => {
+              const base64data = reader.result as string;
+
+              // Add a new page for the image if needed
+              if (yPos > 180) {
+                pdf.addPage();
+                yPos = 20;
+              } else {
+                yPos += 15;
+              }
+
+              pdf.setFontSize(16);
+              pdf.text("PRODUCT CONCEPT VISUALIZATION", 20, yPos);
+              yPos += 10;
+
+              // A4 page width is 210mm, with margins let's use 170mm width
+              const imgWidth = 170;
+              const imgHeight = (imgWidth * 9) / 16; // Maintain 16:9 aspect ratio
+              pdf.addImage(base64data, "PNG", 20, yPos, imgWidth, imgHeight);
+
+              resolve();
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(imageBlob);
+          });
+        } catch (imgError) {
+          console.error("Error adding image to PDF:", imgError);
+          // Continue creating PDF without the image if it fails
+        }
+      }
 
       // Save the PDF
       pdf.save(`innovation_report_${projectId}.pdf`);
@@ -449,9 +535,14 @@ function ReportContent() {
                 <h5 className="font-semibold text-gray-800 mb-2">
                   Solution Details
                 </h5>
-                <p className="text-gray-700 whitespace-pre-line">
-                  {reportData.chosen_solution.explanation}
-                </p>
+                <div
+                  className="text-gray-700 whitespace-pre-line"
+                  dangerouslySetInnerHTML={{
+                    __html: parseBoldMarkdown(
+                      reportData.chosen_solution.explanation
+                    ),
+                  }}
+                />
               </div>
             </div>
           </div>

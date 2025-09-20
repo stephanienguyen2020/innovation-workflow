@@ -486,18 +486,63 @@ class ProjectService:
                 )
         
         try:
-            # Update stage 4 with chosen solution
-            await update_stage_4(db, project_id, chosen_solution_id)
-            
-            # Get and return formatted data
-            return await get_project_pdf_data(db, project_id)
-            
-        except ValueError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=str(e)
+            # Find chosen solution from stage 3
+            stage_3 = next((s for s in project.stages if s.stage_number == 3), None)
+            product_ideas = stage_3.data.get("product_ideas", [])
+            chosen_solution = next((idea for idea in product_ideas if idea.get("id") == chosen_solution_id), None)
+
+            if not chosen_solution:
+                raise HTTPException(status_code=404, detail=f"Solution with ID {chosen_solution_id} not found in stage 3")
+
+            # Update stage 4 with the full chosen solution object
+            await update_stage_4(
+                db,
+                project_id,
+                {"chosen_solution": chosen_solution}
             )
             
+            # Find the chosen problem from stage 2
+            stage_2 = next((s for s in project.stages if s.stage_number == 2), None)
+            problem_statements = stage_2.data.get("problem_statements", [])
+            chosen_problem = next((p for p in problem_statements if p.get("id") == chosen_solution.get("problem_id")), None)
+            
+            # Return formatted data for the report
+            return {
+                "title": f"Innovation Report for {project.problem_domain}",
+                "analysis": project.stages[0].data.get("analysis", ""),
+                "chosen_problem": {
+                    "statement": chosen_problem.get("problem", "Problem not found") if chosen_problem else "Problem not found",
+                    "explanation": chosen_problem.get("explanation", "") if chosen_problem else ""
+                },
+                "chosen_solution": {
+                    "idea": chosen_solution.get("idea"),
+                    "explanation": chosen_solution.get("detailed_explanation"),
+                    "image_url": chosen_solution.get("image_url") # Ensure image_url is returned
+                }
+            }
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error processing stage 4: {str(e)}"
+            )
+
+    @staticmethod
+    async def proxy_image(image_url: str) -> bytes:
+        """
+        Proxy an image from a URL, fetching it on the server side.
+        
+        Args:
+            image_url: The URL of the image to fetch.
+            
+        Returns:
+            The image content in bytes.
+        """
+        image_service = ImageGenerationService()
+        image_bytes = image_service.download_image(image_url)
+        if not image_bytes:
+            raise HTTPException(status_code=404, detail="Image not found or could not be downloaded")
+        return image_bytes
+
     @staticmethod
     async def get_project_pdf(db: AsyncIOMotorDatabase, project_id: str) -> bytes:
         """

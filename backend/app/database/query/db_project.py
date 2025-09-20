@@ -239,7 +239,7 @@ async def update_stage_3(
 async def update_stage_4(
     db: AsyncIOMotorDatabase, 
     project_id: str, 
-    chosen_solution_id: str
+    stage_data: Dict
 ) -> Project:
     """
     Update stage 4 with the chosen solution.
@@ -247,28 +247,19 @@ async def update_stage_4(
     Args:
         db: Database session
         project_id: Project ID
-        chosen_solution_id: ID of the chosen solution from stage 3
+        stage_data: Dictionary containing the chosen solution object
         
     Returns:
         Updated project
     """
     project = await get_project(db, project_id)
     
-    # Get the chosen solution from stage 3
-    stage_3 = next((stage for stage in project.stages if stage.stage_number == 3), None)
-    if not stage_3 or not stage_3.data.get("product_ideas"):
-        raise ValueError("Stage 3 data missing or incomplete")
-        
-    chosen_solution = next(
-        (idea for idea in stage_3.data["product_ideas"] 
-         if idea.get("id") == chosen_solution_id),
-        None
-    )
-    if not chosen_solution:
-        raise ValueError(f"Solution with ID {chosen_solution_id} not found")
-    
+    # The stage_data should be a dict like {"chosen_solution": {...}}
+    if "chosen_solution" not in stage_data or not isinstance(stage_data["chosen_solution"], dict):
+        raise ValueError("Invalid data provided for stage 4 update. Expected {'chosen_solution': {...}}.")
+
     # Update stage 4 data with chosen solution
-    project.stages[3].data = Stage4Data(chosen_solution=chosen_solution).dict()
+    project.stages[3].data = Stage4Data(chosen_solution=stage_data["chosen_solution"]).dict()
     project.stages[3].status = StageStatus.COMPLETED
     project.stages[3].updated_at = datetime.utcnow()
     project.updated_at = datetime.utcnow()
