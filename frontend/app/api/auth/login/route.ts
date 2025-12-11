@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
       name: data.user?.username?.split("@")[0] || username.split("@")[0],
       access_token: data.access_token,
       token_type: data.token_type || "bearer",
+      role: data.user?.priviledge || "user",
     };
 
     console.log(

@@ -122,3 +122,62 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { projectId: string } }
+) {
+  try {
+    // Get the project ID from the URL
+    const projectId = params.projectId;
+    console.log(`Deleting project ID: ${projectId}`);
+
+    // Get the access token from cookies for authentication
+    const accessToken = cookies().get("access_token")?.value;
+
+    if (!accessToken) {
+      return NextResponse.json(
+        { detail: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // Call the backend API to delete the project
+    const response = await fetch(`${API_URL}/api/projects/${projectId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    console.log("Backend delete project response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Project deletion failed:", errorText);
+
+      try {
+        const errorData = JSON.parse(errorText);
+        return NextResponse.json(
+          { detail: errorData.detail || "Failed to delete project" },
+          { status: response.status }
+        );
+      } catch (e) {
+        return NextResponse.json(
+          { detail: errorText || "Failed to delete project" },
+          { status: response.status }
+        );
+      }
+    }
+
+    const data = await response.json();
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Project deletion error:", error);
+    return NextResponse.json(
+      { detail: "An error occurred while deleting the project" },
+      { status: 500 }
+    );
+  }
+}

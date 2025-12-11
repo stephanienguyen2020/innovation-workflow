@@ -13,34 +13,12 @@ function VerifyEmailContent() {
   const [resendLoading, setResendLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [isHydrated, setIsHydrated] = useState(false);
-  const [needsRefresh, setNeedsRefresh] = useState(false);
 
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Handle hydration and auto-refresh
+  // Handle hydration
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const hasRefreshed = window.location.hash === "#refreshed";
-
-    if (!hasRefreshed) {
-      // First visit - add hash and refresh
-      window.location.hash = "#refreshed";
-      setNeedsRefresh(true);
-      window.location.reload();
-      return;
-    }
-
-    // Remove hash and proceed normally
-    if (window.location.hash === "#refreshed") {
-      window.history.replaceState(
-        null,
-        document.title,
-        window.location.pathname + window.location.search
-      );
-    }
-
     setIsHydrated(true);
   }, []);
 
@@ -156,19 +134,15 @@ function VerifyEmailContent() {
     }
   };
 
-  // Show loading until hydrated or if refresh is needed
-  if (!isHydrated || needsRefresh) {
+  // Show loading until hydrated
+  if (!isHydrated) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 p-8 bg-white rounded-[10px] shadow-md">
           <div className="text-center">
-            <h2 className="mt-6 text-3xl font-bold">
-              {needsRefresh ? "Refreshing..." : "Loading..."}
-            </h2>
+            <h2 className="mt-6 text-3xl font-bold">Loading...</h2>
             <p className="mt-2 text-sm text-gray-600">
-              {needsRefresh
-                ? "Fixing page display..."
-                : "Preparing email verification..."}
+              Preparing email verification...
             </p>
           </div>
         </div>

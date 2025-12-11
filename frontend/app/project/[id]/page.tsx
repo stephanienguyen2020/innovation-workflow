@@ -5,6 +5,21 @@ import { useAuth } from "../../../context/AuthContext";
 import { useParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Loader2 } from "lucide-react";
+import PDFViewer from "@/components/PDFViewer";
+
+// Helper function to format markdown text (converts **text**: to bold)
+function formatMarkdownText(text: string): string {
+  if (!text) return "";
+
+  let formatted = text
+    .replace(/\*\*(.*?)\*\*:/g, "<br/><strong>$1:</strong>")
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br/>")
+    .replace(/^- /gm, "• ")
+    .replace(/^<br\/>/, "");
+
+  return formatted;
+}
 
 interface Stage {
   stage_number: number;
@@ -43,9 +58,17 @@ interface Project {
   created_at: string;
   updated_at: string;
   status: string;
+  original_file_id?: string;
+  original_filename?: string;
   stages?: {
     [key: number]: Stage;
   };
+}
+
+interface FileInfo {
+  has_file: boolean;
+  filename: string | null;
+  file_id: string | null;
 }
 
 export default function ProjectDetailsPage() {
@@ -57,6 +80,10 @@ export default function ProjectDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<number>(1);
+  const [documentText, setDocumentText] = useState<string | null>(null);
+  const [showFullDocument, setShowFullDocument] = useState(false);
+  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
+  const [showPdfViewer, setShowPdfViewer] = useState(true);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -105,6 +132,34 @@ export default function ProjectDetailsPage() {
       }
 
       setStages(stagesData);
+
+      // Fetch the original document text
+      try {
+        const documentResponse = await fetch(
+          `/api/projects/${projectId}/document`
+        );
+        if (documentResponse.ok) {
+          const docData = await documentResponse.json();
+          setDocumentText(docData.text || null);
+        }
+      } catch (docError) {
+        console.error("Error fetching document:", docError);
+        // Document may not exist, that's okay
+      }
+
+      // Fetch file info to check if there's an original PDF
+      try {
+        const fileInfoResponse = await fetch(
+          `/api/projects/${projectId}/file/info`
+        );
+        if (fileInfoResponse.ok) {
+          const fileData = await fileInfoResponse.json();
+          setFileInfo(fileData);
+        }
+      } catch (fileError) {
+        console.error("Error fetching file info:", fileError);
+        // File may not exist, that's okay
+      }
     } catch (err) {
       console.error("Error fetching project details:", err);
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -137,15 +192,78 @@ export default function ProjectDetailsPage() {
     switch (stageNumber) {
       case 1: // Interview Analysis
         return (
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold">Interview Analysis</h3>
-            {stage.data.analysis ? (
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="whitespace-pre-line">{stage.data.analysis}</p>
+          <div className="space-y-6">
+            {/* Original Document Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold">Original Document</h3>
+                <div className="flex gap-2">
+                  {fileInfo?.has_file && (
+                    <button
+                      onClick={() => setShowPdfViewer(!showPdfViewer)}
+                      className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1 rounded border border-blue-200 hover:bg-blue-50"
+                    >
+                      {showPdfViewer ? "Show as text" : "Show PDF"}
+                    </button>
+                  )}
+                  {!showPdfViewer && documentText && (
+                    <button
+                      onClick={() => setShowFullDocument(!showFullDocument)}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      {showFullDocument ? "Show less" : "Show full document"}
+                    </button>
+                  )}
+                </div>
               </div>
-            ) : (
-              <p className="text-gray-500">No analysis available.</p>
-            )}
+
+              {/* PDF Viewer - show if file exists and user wants to see PDF */}
+              {fileInfo?.has_file && showPdfViewer ? (
+                <PDFViewer
+                  projectId={params.id as string}
+                  filename={fileInfo.filename || undefined}
+                />
+              ) : documentText ? (
+                // Text View - show extracted text
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div
+                    className={`whitespace-pre-line text-gray-700 ${
+                      !showFullDocument ? "max-h-48 overflow-hidden" : ""
+                    }`}
+                  >
+                    {documentText}
+                  </div>
+                  {!showFullDocument && documentText.length > 500 && (
+                    <div className="mt-2 pt-2 border-t border-gray-200">
+                      <button
+                        onClick={() => setShowFullDocument(true)}
+                        className="text-sm text-blue-600 hover:text-blue-800"
+                      >
+                        Click to expand full document...
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-500 italic">
+                  No original document available.
+                </p>
+              )}
+            </div>
+
+            {/* Analysis Section */}
+            <div className="space-y-3">
+              <h3 className="text-xl font-semibold">Interview Analysis</h3>
+              {stage.data.analysis ? (
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                  <p className="whitespace-pre-line text-gray-700">
+                    {stage.data.analysis}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-gray-500">No analysis available.</p>
+              )}
+            </div>
           </div>
         );
 
@@ -182,9 +300,12 @@ export default function ProjectDetailsPage() {
                     <p className="font-medium">
                       {index + 1}. {idea.idea}
                     </p>
-                    <p className="text-gray-700 mt-2">
-                      {idea.detailed_explanation}
-                    </p>
+                    <div
+                      className="text-gray-700 mt-2 leading-relaxed"
+                      dangerouslySetInnerHTML={{
+                        __html: formatMarkdownText(idea.detailed_explanation),
+                      }}
+                    />
                   </div>
                 ))}
               </div>
@@ -205,10 +326,15 @@ export default function ProjectDetailsPage() {
                   <h5 className="text-xl font-medium mb-2">
                     {stage.data.chosen_solution.idea}
                   </h5>
-                  <p className="text-gray-700">
-                    {stage.data.chosen_solution.detailed_explanation ||
-                      stage.data.chosen_solution.explanation}
-                  </p>
+                  <div
+                    className="text-gray-700 leading-relaxed"
+                    dangerouslySetInnerHTML={{
+                      __html: formatMarkdownText(
+                        stage.data.chosen_solution.detailed_explanation ||
+                          stage.data.chosen_solution.explanation
+                      ),
+                    }}
+                  />
                 </div>
               ) : (
                 <p className="text-gray-500">No chosen solution available.</p>

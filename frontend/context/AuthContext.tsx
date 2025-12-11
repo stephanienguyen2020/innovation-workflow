@@ -13,6 +13,7 @@ type User = {
   name: string;
   email: string;
   avatar?: string;
+  role?: string;
 };
 
 type LoginResponse = {
@@ -20,6 +21,7 @@ type LoginResponse = {
   name: string;
   email: string;
   access_token: string;
+  role?: string;
 };
 
 type StoredUserData = {
@@ -28,6 +30,7 @@ type StoredUserData = {
   email: string;
   access_token: string;
   token_type: string;
+  role?: string;
 };
 
 type SignupResult = {
@@ -72,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: userData.userId,
             name: userData.name,
             email: userData.email,
+            role: userData.role,
           };
         }
       }
@@ -95,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: loginResponse.email,
             access_token: loginResponse.access_token,
             token_type: "bearer",
+            role: loginResponse.role,
           } as StoredUserData)
         );
       }
@@ -190,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: data.name,
         email: data.email,
         access_token: data.access_token,
+        role: data.role,
       };
 
       // Set the user state (only with user info, not token)
@@ -197,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: loginResponse.userId,
         name: loginResponse.name,
         email: loginResponse.email,
+        role: loginResponse.role,
       });
 
       // Store complete login response including token in localStorage

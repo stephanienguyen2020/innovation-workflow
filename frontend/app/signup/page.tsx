@@ -55,18 +55,17 @@ function SignupContent() {
 
       // Check if the signup requires email verification
       if (result?.requires_verification) {
-        // Redirect to email verification page with email parameter
-        router.push(`/verify-email?email=${encodeURIComponent(email)}`);
+        window.location.href = `/verify-email?email=${encodeURIComponent(
+          email
+        )}`;
       } else if (result?.is_admin) {
         // Admin account created, redirect to login with admin message
-        router.push(
-          "/login?message=Admin account created successfully! You can log in immediately."
-        );
+        window.location.href =
+          "/login?message=Admin account created successfully! You can log in immediately.";
       } else {
         // For backward compatibility, redirect to login
-        router.push(
-          "/login?message=Account created successfully! Please log in."
-        );
+        window.location.href =
+          "/login?message=Account created successfully! Please log in.";
       }
     } catch (err) {
       console.error("Signup error:", err);

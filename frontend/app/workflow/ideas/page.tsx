@@ -68,6 +68,7 @@ function IdeationContent() {
   const [regeneratingImageId, setRegeneratingImageId] = useState<string | null>(
     null
   );
+  const [progressPercent, setProgressPercent] = useState(0);
 
   useEffect(() => {
     if (!projectId) {
@@ -300,7 +301,20 @@ function IdeationContent() {
   const handleRegenerateIdeas = async () => {
     try {
       setIsRegenerating(true);
+      setProgressPercent(0);
       setError(null);
+
+      // Start progress animation (estimated 2 minutes = 120 seconds)
+      const estimatedDuration = 120000; // 2 minutes in ms
+      const progressInterval = setInterval(() => {
+        setProgressPercent((prev) => {
+          // Slow down as we approach 95% (never reach 100% until done)
+          if (prev < 50) return prev + 1;
+          if (prev < 80) return prev + 0.5;
+          if (prev < 95) return prev + 0.2;
+          return prev;
+        });
+      }, estimatedDuration / 100);
 
       // Build URL with query parameters for the API
       let apiUrl = `/api/projects/${projectId}/stages/3/generate`;
@@ -330,6 +344,8 @@ function IdeationContent() {
         },
       });
 
+      clearInterval(progressInterval);
+
       if (!response.ok) {
         let errorMessage = "Failed to regenerate ideas";
 
@@ -352,10 +368,12 @@ function IdeationContent() {
         throw new Error(errorMessage);
       }
 
+      // Set progress to 100% on success
+      setProgressPercent(100);
       console.log("Ideas regenerated successfully - reloading page");
 
-      // Wait for a moment to ensure backend processing is complete
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for a moment to show 100% completion
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Refresh the page to show new ideas
       window.location.reload();
@@ -363,6 +381,7 @@ function IdeationContent() {
       console.error("Error regenerating ideas:", err);
       setError((err as Error).message || "Failed to regenerate ideas");
       setIsRegenerating(false);
+      setProgressPercent(0);
     }
   };
 
@@ -375,8 +394,58 @@ function IdeationContent() {
     );
   }
 
+  // Progress indicator component for regenerating ideas
+  const ProgressOverlay = () => (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]">
+      <div className="bg-white rounded-2xl p-8 max-w-md mx-4 text-center shadow-2xl">
+        <div className="relative w-32 h-32 mx-auto mb-6">
+          {/* Background circle */}
+          <svg className="w-32 h-32 transform -rotate-90">
+            <circle
+              cx="64"
+              cy="64"
+              r="56"
+              stroke="#e5e7eb"
+              strokeWidth="8"
+              fill="none"
+            />
+            {/* Progress circle */}
+            <circle
+              cx="64"
+              cy="64"
+              r="56"
+              stroke="#001DFA"
+              strokeWidth="8"
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray={`${2 * Math.PI * 56}`}
+              strokeDashoffset={`${
+                2 * Math.PI * 56 * (1 - progressPercent / 100)
+              }`}
+              className="transition-all duration-300 ease-out"
+            />
+          </svg>
+          {/* Percentage text */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-2xl font-bold text-gray-800">
+              {Math.round(progressPercent)}%
+            </span>
+          </div>
+        </div>
+        <h3 className="text-xl font-semibold mb-2">Regenerating Ideas</h3>
+        <p className="text-gray-600 mb-4">
+          Creating new product ideas and concept images...
+        </p>
+        <p className="text-sm text-gray-400">This may take up to 2 minutes</p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen p-6 flex flex-col max-w-6xl mx-auto">
+      {/* Progress overlay for regenerating */}
+      {isRegenerating && <ProgressOverlay />}
+
       {/* Header */}
       <div className="text-center space-y-4 mb-12">
         <h1 className="text-4xl md:text-6xl font-bold">Innovation Workflow</h1>

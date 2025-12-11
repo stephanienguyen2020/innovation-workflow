@@ -37,7 +37,12 @@ function ReportContent() {
 
   // Helper function to parse markdown-style bolding
   const parseBoldMarkdown = (text: string) => {
-    return text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    if (!text) return "";
+    return text
+      .replace(/\*\*(.*?)\*\*:/g, "<br/><strong>$1:</strong>")
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\n/g, "<br/>")
+      .replace(/^<br\/>/, "");
   };
 
   useEffect(() => {
@@ -209,122 +214,155 @@ function ReportContent() {
 
       // Create a new PDF document (A4 format)
       const pdf = new jsPDF();
+      const pageHeight = 280; // A4 height minus margins
+      const marginTop = 20;
+      const marginLeft = 20;
+      const maxWidth = 170;
 
-      // Set font size and add title
+      // Helper function to check page break and add new page if needed
+      const checkPageBreak = (
+        currentY: number,
+        neededSpace: number
+      ): number => {
+        if (currentY + neededSpace > pageHeight) {
+          pdf.addPage();
+          return marginTop;
+        }
+        return currentY;
+      };
+
+      // Helper function to add text with automatic page breaks
+      const addTextWithPageBreak = (
+        lines: string[],
+        startY: number,
+        lineHeight: number,
+        fontSize: number
+      ): number => {
+        let y = startY;
+        pdf.setFontSize(fontSize);
+
+        for (const line of lines) {
+          y = checkPageBreak(y, lineHeight);
+          pdf.text(line, marginLeft, y);
+          y += lineHeight;
+        }
+        return y;
+      };
+
+      let yPos = marginTop;
+
+      // Title
       pdf.setFontSize(20);
-      pdf.text(reportData.title, 20, 20);
+      const titleLines = pdf.splitTextToSize(reportData.title, maxWidth);
+      yPos = addTextWithPageBreak(titleLines, yPos, 8, 20);
+      yPos += 5;
 
+      // Generated date and Project ID
       pdf.setFontSize(12);
+      yPos = checkPageBreak(yPos, 20);
       pdf.text(
         `Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
-        20,
-        30
+        marginLeft,
+        yPos
       );
-      pdf.text(`Project ID: ${projectId}`, 20, 38);
+      yPos += 8;
+      pdf.text(`Project ID: ${projectId}`, marginLeft, yPos);
+      yPos += 15;
 
-      // Add Research Analysis section
+      // Research Analysis Section
+      yPos = checkPageBreak(yPos, 20);
       pdf.setFontSize(16);
-      pdf.text("RESEARCH ANALYSIS", 20, 50);
-      pdf.setFontSize(10);
-
-      // Handle long text by splitting into multiple lines
-      const analysisLines = pdf.splitTextToSize(reportData.analysis, 170);
-      pdf.text(analysisLines, 20, 60);
-
-      // Calculate Y position for next section based on number of lines
-      let yPos = 65 + analysisLines.length * 5;
-
-      // Add Problem section
-      pdf.setFontSize(16);
-      pdf.text("IDENTIFIED PROBLEM", 20, yPos);
-      pdf.setFontSize(12);
+      pdf.text("RESEARCH ANALYSIS", marginLeft, yPos);
       yPos += 10;
 
+      pdf.setFontSize(10);
+      const analysisLines = pdf.splitTextToSize(reportData.analysis, maxWidth);
+      yPos = addTextWithPageBreak(analysisLines, yPos, 5, 10);
+      yPos += 15;
+
+      // Identified Problem Section
+      yPos = checkPageBreak(yPos, 25);
+      pdf.setFontSize(16);
+      pdf.text("IDENTIFIED PROBLEM", marginLeft, yPos);
+      yPos += 10;
+
+      pdf.setFontSize(12);
+      pdf.setFont(undefined, "bold");
       const problemStatementLines = pdf.splitTextToSize(
         reportData.chosen_problem.statement,
-        170
+        maxWidth
       );
-      pdf.setFont(undefined, "bold");
-      pdf.text(problemStatementLines, 20, yPos);
-      yPos += problemStatementLines.length * 7;
+      yPos = addTextWithPageBreak(problemStatementLines, yPos, 6, 12);
+      yPos += 5;
 
       pdf.setFont(undefined, "normal");
-      yPos = renderFormattedText(
-        pdf,
-        reportData.chosen_problem.explanation,
-        20,
-        yPos,
-        170,
-        5
+      pdf.setFontSize(10);
+      const problemExplanationLines = pdf.splitTextToSize(
+        reportData.chosen_problem.explanation.replace(/\*\*/g, ""),
+        maxWidth
       );
-      yPos += 10;
+      yPos = addTextWithPageBreak(problemExplanationLines, yPos, 5, 10);
+      yPos += 15;
 
-      // Add a new page if we're running out of space
-      if (yPos > 250) {
-        pdf.addPage();
-        yPos = 20;
-      }
-
-      // Add Solution section
+      // Chosen Solution Section
+      yPos = checkPageBreak(yPos, 25);
       pdf.setFontSize(16);
-      pdf.text("CHOSEN SOLUTION", 20, yPos);
-      pdf.setFontSize(12);
+      pdf.text("CHOSEN SOLUTION", marginLeft, yPos);
       yPos += 10;
 
-      const solutionLines = pdf.splitTextToSize(
-        reportData.chosen_solution.idea,
-        170
-      );
+      pdf.setFontSize(12);
       pdf.setFont(undefined, "bold");
-      pdf.text(solutionLines, 20, yPos);
-      yPos += solutionLines.length * 7;
+      const solutionTitleLines = pdf.splitTextToSize(
+        reportData.chosen_solution.idea,
+        maxWidth
+      );
+      yPos = addTextWithPageBreak(solutionTitleLines, yPos, 6, 12);
+      yPos += 5;
 
       pdf.setFont(undefined, "normal");
-      yPos = renderFormattedText(
-        pdf,
-        reportData.chosen_solution.explanation,
-        20,
-        yPos,
-        170,
-        5
+      pdf.setFontSize(10);
+      const solutionExplanationLines = pdf.splitTextToSize(
+        reportData.chosen_solution.explanation.replace(/\*\*/g, ""),
+        maxWidth
       );
+      yPos = addTextWithPageBreak(solutionExplanationLines, yPos, 5, 10);
+      yPos += 10;
 
       // Fetch and add the image if a URL exists
       if (reportData.chosen_solution.image_url) {
         try {
-          // Use our backend proxy to get the image data
           const imageResponse = await fetch(
-            `/api/projects/image-proxy?image_url=${encodeURIComponent(
-              reportData.chosen_solution.image_url
-            )}`
+            reportData.chosen_solution.image_url
           );
           if (!imageResponse.ok) {
-            throw new Error("Failed to fetch image via proxy");
+            throw new Error("Failed to fetch image");
           }
           const imageBlob = await imageResponse.blob();
 
-          // Convert blob to a Base64 string
           const reader = new FileReader();
           await new Promise<void>((resolve, reject) => {
             reader.onloadend = () => {
               const base64data = reader.result as string;
 
-              // Add a new page for the image if needed
-              if (yPos > 180) {
-                pdf.addPage();
-                yPos = 20;
-              } else {
-                yPos += 15;
-              }
+              // Image dimensions
+              const imgWidth = 170;
+              const imgHeight = (imgWidth * 9) / 16; // 16:9 aspect ratio
+
+              // Check if we need a new page for the image section
+              yPos = checkPageBreak(yPos, imgHeight + 25);
 
               pdf.setFontSize(16);
-              pdf.text("PRODUCT CONCEPT VISUALIZATION", 20, yPos);
+              pdf.text("PRODUCT CONCEPT VISUALIZATION", marginLeft, yPos);
               yPos += 10;
 
-              // A4 page width is 210mm, with margins let's use 170mm width
-              const imgWidth = 170;
-              const imgHeight = (imgWidth * 9) / 16; // Maintain 16:9 aspect ratio
-              pdf.addImage(base64data, "PNG", 20, yPos, imgWidth, imgHeight);
+              pdf.addImage(
+                base64data,
+                "PNG",
+                marginLeft,
+                yPos,
+                imgWidth,
+                imgHeight
+              );
 
               resolve();
             };
@@ -333,7 +371,6 @@ function ReportContent() {
           });
         } catch (imgError) {
           console.error("Error adding image to PDF:", imgError);
-          // Continue creating PDF without the image if it fails
         }
       }
 
@@ -485,12 +522,12 @@ function ReportContent() {
 
       {/* Main Content */}
       <div className="flex flex-col space-y-10">
-        <div className="space-y-6 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-          <h2 className="text-3xl font-bold">{reportData.title}</h2>
+        <div className="space-y-6 bg-white p-8 rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <h2 className="text-3xl font-bold break-words">{reportData.title}</h2>
 
           <div className="space-y-4">
             <h3 className="text-2xl font-semibold">Research Analysis</h3>
-            <p className="text-gray-700 whitespace-pre-line">
+            <p className="text-gray-700 whitespace-pre-line break-words">
               {reportData.analysis}
             </p>
           </div>
@@ -498,10 +535,10 @@ function ReportContent() {
           <div className="space-y-4">
             <h3 className="text-2xl font-semibold">Identified Problem</h3>
             <div className="bg-gray-50 p-6 rounded-xl">
-              <h4 className="text-xl font-medium mb-2">
+              <h4 className="text-xl font-medium mb-2 break-words">
                 {reportData.chosen_problem.statement}
               </h4>
-              <p className="text-gray-700">
+              <p className="text-gray-700 break-words">
                 {reportData.chosen_problem.explanation}
               </p>
             </div>
@@ -510,7 +547,7 @@ function ReportContent() {
           <div className="space-y-4">
             <h3 className="text-2xl font-semibold">Chosen Solution</h3>
             <div className="bg-blue-50 p-6 rounded-xl">
-              <h4 className="text-xl font-medium mb-4">
+              <h4 className="text-xl font-medium mb-4 break-words">
                 {reportData.chosen_solution.idea}
               </h4>
 
@@ -522,10 +559,21 @@ function ReportContent() {
                   </h5>
                   <div className="relative rounded-lg overflow-hidden bg-white p-2">
                     <img
-                      src={reportData.chosen_solution.image_url}
+                      src={
+                        // The image_url from backend is like "/api/images/{id}"
+                        // We need to use this directly since Next.js will proxy it
+                        reportData.chosen_solution.image_url
+                      }
                       alt={`Concept visualization for ${reportData.chosen_solution.idea}`}
                       className="w-full max-w-3xl h-auto object-cover rounded-md mx-auto"
                       style={{ aspectRatio: "16/9" }}
+                      onError={(e) => {
+                        console.error(
+                          "Image failed to load:",
+                          reportData.chosen_solution.image_url
+                        );
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
                     />
                   </div>
                 </div>
@@ -536,7 +584,7 @@ function ReportContent() {
                   Solution Details
                 </h5>
                 <div
-                  className="text-gray-700 whitespace-pre-line"
+                  className="text-gray-700 leading-relaxed break-words"
                   dangerouslySetInnerHTML={{
                     __html: parseBoldMarkdown(
                       reportData.chosen_solution.explanation

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useRouter } from "next/navigation";
+import { Trash2, Loader2 } from "lucide-react";
 import type { Project } from "../api/projects/route";
 
 export default function PastProjectsPage() {
@@ -11,6 +12,12 @@ export default function PastProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
+    null
+  );
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     if (!loading && !user) {
@@ -53,6 +60,32 @@ export default function PastProjectsPage() {
       month: "long",
       day: "numeric",
     });
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    try {
+      setDeletingProjectId(projectId);
+      setShowDeleteConfirm(null);
+
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete project");
+      }
+
+      // Remove the project from the local state
+      setProjects((prev) => prev.filter((p) => p._id !== projectId));
+    } catch (err) {
+      console.error("Error deleting project:", err);
+      setError("Failed to delete project. Please try again.");
+    } finally {
+      setDeletingProjectId(null);
+    }
   };
 
   if (loading || isLoading) {
@@ -107,6 +140,9 @@ export default function PastProjectsPage() {
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
                     Status
                   </th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -137,6 +173,38 @@ export default function PastProjectsPage() {
                       >
                         {project.status.replace("_", " ")}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {showDeleteConfirm === project._id ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-sm text-gray-600">Delete?</span>
+                          <button
+                            onClick={() => handleDeleteProject(project._id)}
+                            disabled={deletingProjectId === project._id}
+                            className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                          >
+                            {deletingProjectId === project._id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              "Yes"
+                            )}
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(null)}
+                            className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setShowDeleteConfirm(project._id)}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          title="Delete project"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

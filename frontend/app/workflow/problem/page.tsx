@@ -30,6 +30,8 @@ function ProblemDefinitionContent() {
   const [showWarning, setShowWarning] = useState(false);
   const [generatingProblems, setGeneratingProblems] = useState(false);
   const [hasUploadState, setHasUploadState] = useState(false);
+  const [generatingIdeas, setGeneratingIdeas] = useState(false);
+  const [progressPercent, setProgressPercent] = useState(0);
 
   // Check if we have upload state saved in localStorage
   useEffect(() => {
@@ -211,8 +213,21 @@ function ProblemDefinitionContent() {
     }
 
     try {
-      setLoading(true);
+      setGeneratingIdeas(true);
+      setProgressPercent(0);
       setError(null);
+
+      // Start progress animation (estimated 2 minutes = 120 seconds)
+      const estimatedDuration = 120000; // 2 minutes in ms
+      const progressInterval = setInterval(() => {
+        setProgressPercent((prev) => {
+          // Slow down as we approach 95% (never reach 100% until done)
+          if (prev < 50) return prev + 1;
+          if (prev < 80) return prev + 0.5;
+          if (prev < 95) return prev + 0.2;
+          return prev;
+        });
+      }, estimatedDuration / 100);
 
       // Build URL with query parameters for the backend API
       let apiUrl = `/api/projects/${projectId}/stages/3/generate`;
@@ -242,6 +257,8 @@ function ProblemDefinitionContent() {
         },
       });
 
+      clearInterval(progressInterval);
+
       if (!response.ok) {
         let errorMessage = "Failed to process stage 3";
 
@@ -264,10 +281,12 @@ function ProblemDefinitionContent() {
         throw new Error(errorMessage);
       }
 
+      // Set progress to 100% on success
+      setProgressPercent(100);
       console.log("API call successful - navigating to ideas page");
 
-      // Wait for a moment to ensure backend processing is complete
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for a moment to show 100% completion
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Navigate to ideas page with the selected problem ID
       if (selectedProblem === "custom") {
@@ -286,7 +305,8 @@ function ProblemDefinitionContent() {
     } catch (err) {
       console.error("Error generating ideas:", err);
       setError((err as Error).message || "Failed to generate ideas");
-      setLoading(false);
+      setGeneratingIdeas(false);
+      setProgressPercent(0);
     }
   };
 
@@ -411,8 +431,8 @@ function ProblemDefinitionContent() {
           Select from the following problem statement or enter your own
         </p>
 
-        {/* Loading State */}
-        {(loading || generatingProblems) && (
+        {/* Loading State for problems */}
+        {(loading || generatingProblems) && !generatingIdeas && (
           <div className="flex flex-col items-center justify-center py-8">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-4" />
             <p className="text-lg">
@@ -420,6 +440,55 @@ function ProblemDefinitionContent() {
                 ? "Generating problem statements based on your research..."
                 : "Loading problem statements..."}
             </p>
+          </div>
+        )}
+
+        {/* Progress indicator for idea generation */}
+        {generatingIdeas && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]">
+            <div className="bg-white rounded-2xl p-8 max-w-md mx-4 text-center shadow-2xl">
+              <div className="relative w-32 h-32 mx-auto mb-6">
+                {/* Background circle */}
+                <svg className="w-32 h-32 transform -rotate-90">
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="#e5e7eb"
+                    strokeWidth="8"
+                    fill="none"
+                  />
+                  {/* Progress circle */}
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="#001DFA"
+                    strokeWidth="8"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 56}`}
+                    strokeDashoffset={`${
+                      2 * Math.PI * 56 * (1 - progressPercent / 100)
+                    }`}
+                    className="transition-all duration-300 ease-out"
+                  />
+                </svg>
+                {/* Percentage text */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-2xl font-bold text-gray-800">
+                    {Math.round(progressPercent)}%
+                  </span>
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Generating Ideas</h3>
+              <p className="text-gray-600 mb-4">
+                Creating product ideas and concept images...
+              </p>
+              <p className="text-sm text-gray-400">
+                This may take up to 2 minutes
+              </p>
+            </div>
           </div>
         )}
 
@@ -528,24 +597,27 @@ function ProblemDefinitionContent() {
         <div className="flex flex-wrap gap-4 pt-4">
           <button
             onClick={handleGoBackToUpload}
-            className="bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
-                     hover:opacity-90 transition-opacity"
+            disabled={generatingIdeas}
+            className={`bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
+                     hover:opacity-90 transition-opacity ${
+                       generatingIdeas ? "opacity-50 cursor-not-allowed" : ""
+                     }`}
           >
             Back to Research
           </button>
           <button
             onClick={handleGenerateIdeas}
-            disabled={loading || generatingProblems}
+            disabled={loading || generatingProblems || generatingIdeas}
             className={`bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity inline-flex items-center gap-2 
                      ${
-                       loading || generatingProblems
+                       loading || generatingProblems || generatingIdeas
                          ? "opacity-70 cursor-not-allowed"
                          : ""
                      }`}
           >
             Generate ideas
-            {loading || generatingProblems ? (
+            {loading || generatingProblems || generatingIdeas ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <Rocket className="w-5 h-5" />

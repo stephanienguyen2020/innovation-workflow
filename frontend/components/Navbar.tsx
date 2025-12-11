@@ -74,10 +74,25 @@ export default function Navbar() {
                     onMouseEnter={handleMouseEnter}
                     onMouseLeave={handleMouseLeave}
                   >
-                    <div className="px-4 py-2 text-sm text-gray-700 border-b flex items-center gap-2">
-                      <span className="text-gray-400">👤</span>
-                      {user?.name || user?.email || "User"}
-                    </div>
+                    {user?.role === "admin" ? (
+                      <Link
+                        href="/admin"
+                        className="block px-4 py-2 text-sm text-gray-700 border-b hover:bg-gray-100"
+                        onClick={() => setShowDropdown(false)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400">👤</span>
+                          <div className="flex flex-col">
+                            <span>{user?.name || user?.email || "User"}</span>
+                          </div>
+                        </div>
+                      </Link>
+                    ) : (
+                      <div className="px-4 py-2 text-sm text-gray-700 border-b flex items-center gap-2">
+                        <span className="text-gray-400">👤</span>
+                        <span>{user?.name || user?.email || "User"}</span>
+                      </div>
+                    )}
                     <button
                       onClick={async () => {
                         await logout();
