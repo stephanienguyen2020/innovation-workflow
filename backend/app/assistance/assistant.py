@@ -3,7 +3,7 @@ import json
 import os
 import openai
 from app.constant.assistant import INSTRUCTION
-from app.constant.config import OPENAI_MODEL, OPENAPI_KEY
+from app.constant.config import OPENAI_MODEL, OPENAI_API_KEY
 
 class Assistant:
     assistant_id = None
@@ -12,7 +12,7 @@ class Assistant:
     instruction = INSTRUCTION
     
     def __init__(self):
-        self.client = openai.OpenAI(api_key=OPENAPI_KEY)
+        self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
         self.name = "Zelta"
         
         if Assistant.assistant_id:

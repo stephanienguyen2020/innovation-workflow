@@ -2,7 +2,7 @@ from app.middleware.log import APIGatewayMiddleware
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.constant.config import SECRET_KEY
-from app.routers import conversation, rag, auth, project, resource_alloc
+from app.routers import conversation, rag, auth, project, resource_alloc, admin, images
 from starlette.middleware.sessions import SessionMiddleware
 from app.database.database import session_manager
 from contextlib import asynccontextmanager
@@ -15,8 +15,23 @@ async def lifespan(app: FastAPI):
     await session_manager.create_collections([
         "rag_documents",    # For RAG document storage with vector embeddings
         "projects",
-        "users"
+        "users",
+        "allowed_emails",   # For email whitelist storage
+        "images",           # For storing generated images
+        "uploaded_files"    # For storing original uploaded files (PDFs, documents)
     ])
+    
+    # Initialize email validator with database
+    from app.utils.email_validator import email_validator
+    email_validator.set_db(session_manager.db)
+    
+    # Initialize image service with database
+    from app.services.image_service import image_service
+    image_service.set_db(session_manager.db)
+    
+    # Initialize file service with database
+    from app.services.file_service import file_service
+    file_service.set_db(session_manager.db)
     
     # Initialize RAG service
     from app.services.rag_service import rag_service
@@ -100,5 +115,16 @@ app.include_router(
     resource_alloc.router,
     dependencies=[Depends(get_current_user)]
 )
+# Add admin router
+app.include_router(
+    admin.router,
+    prefix="/api",
+    dependencies=[Depends(get_current_user)]
+)
 
-    
+# Add images router (no auth required for serving images)
+app.include_router(
+    images.router,
+    prefix="/api"
+)
+

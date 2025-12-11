@@ -366,6 +366,78 @@ async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document
     
     return project
 
+async def update_original_file(
+    db: AsyncIOMotorDatabase, 
+    project_id: str, 
+    file_id: str,
+    filename: str
+) -> Project:
+    """
+    Update the original file info of a project.
+
+    Args:
+        db: Database session
+        project_id: Project ID
+        file_id: ID of the stored file
+        filename: Original filename
+
+    Returns:
+        Updated project
+    """
+    # Get current project
+    project = await get_project(db, project_id)
+
+    # Update original file info
+    await db.projects.update_one(
+        {"_id": ObjectId(project_id)},
+        {
+            "$set": {
+                "original_file_id": file_id,
+                "original_filename": filename,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return project
+
+async def delete_project(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> bool:
+    """
+    Delete a specific project and its associated data.
+    
+    Args:
+        db: Database session
+        project_id: Project ID to delete
+        user_id: User ID for ownership verification
+        
+    Returns:
+        True if project was deleted successfully
+        
+    Raises:
+        HTTPException: If project not found or user doesn't own it
+    """
+    # First verify the project exists and belongs to the user
+    # Convert user_id to ObjectId for proper comparison
+    project = await db.projects.find_one({
+        "_id": ObjectId(project_id),
+        "user_id": ObjectId(user_id)
+    })
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found or you don't have permission to delete it")
+    
+    # Delete associated images
+    await db.images.delete_many({"project_id": project_id})
+    
+    # Delete the project
+    result = await db.projects.delete_one({
+        "_id": ObjectId(project_id),
+        "user_id": ObjectId(user_id)
+    })
+    
+    return result.deleted_count > 0
+
+
 async def delete_all_data(db: AsyncIOMotorDatabase) -> Dict[str, int]:
     """
     Delete all documents from both rag_documents and projects collections.

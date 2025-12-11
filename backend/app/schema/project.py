@@ -59,6 +59,8 @@ class Project(BaseModel):
     user_id: ObjectId
     problem_domain: str
     document_id: Optional[str] = None  # Document ID at project level since it's used across stages
+    original_file_id: Optional[str] = None  # ID of the original uploaded file (PDF/document)
+    original_filename: Optional[str] = None  # Original filename for display purposes
     status: ProjectStatus = Field(default=ProjectStatus.IN_PROGRESS)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

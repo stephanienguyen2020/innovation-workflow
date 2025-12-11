@@ -37,8 +37,8 @@ class AuthService:
         """Handle user signup with email whitelist validation and email verification"""
         try:
             # Validate email against whitelist
-            if not email_validator.is_email_allowed(user.email):
-                error_message = email_validator.get_validation_error_message(user.email)
+            if not await email_validator.is_email_allowed(user.email):
+                error_message = await email_validator.get_validation_error_message(user.email)
                 return JSONResponse(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     content={

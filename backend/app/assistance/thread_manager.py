@@ -3,12 +3,12 @@ from fastapi import HTTPException
 import openai
 import json
 from app.assistance.assistant import Assistant
-from app.constant.config import OPENAPI_KEY
+from app.constant.config import OPENAI_API_KEY
 from fastapi import status
 
 class ThreadManager:
     def __init__(self, session: dict):
-        self.client = openai.OpenAI(api_key=OPENAPI_KEY)
+        self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
         self.thread = None
         self.session = session
 

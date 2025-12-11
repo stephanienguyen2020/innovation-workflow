@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Path, Query, Body
+from fastapi import APIRouter, Depends, UploadFile, File, Path, Query, Body, HTTPException
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Optional, Dict, List
@@ -6,6 +6,8 @@ from typing import Optional, Dict, List
 from app.database.database import get_db
 from app.schema.project import Project, Stage, ProjectCreate
 from app.services.project_service import project_service
+from app.services.image_service import image_service
+from app.services.file_service import file_service
 from app.middleware.auth import get_current_user
 from app.schema.user import UserProfile
 
@@ -68,6 +70,73 @@ async def get_project(
         Project if found and belongs to the user
     """
     return await project_service.get_project_by_id(db, project_id, user.id)
+
+
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: str = Path(..., description="Project ID"),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Delete a project by ID, validating that it belongs to the current authenticated user.
+    
+    Args:
+        project_id: Project ID
+        user: Current authenticated user from JWT token
+        db: Database connection
+    
+    Returns:
+        Success message if project was deleted
+    """
+    await project_service.delete_project(db, project_id, user.id)
+    return {"message": "Project deleted successfully"}
+
+
+@router.get("/{project_id}/document")
+async def get_project_document(
+    project_id: str = Path(..., description="Project ID"),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get the original document content for a project.
+    
+    Args:
+        project_id: Project ID
+        user: Current authenticated user from JWT token
+        db: Database connection
+    
+    Returns:
+        Document text content if available
+    """
+    # Get the project to verify ownership and get document_id
+    project = await project_service.get_project_by_id(db, project_id, user.id)
+    
+    if not project.document_id:
+        raise HTTPException(status_code=404, detail="No document found for this project")
+    
+    # Get the document from rag_documents collection
+    rag_collection = db["rag_documents"]
+    document = await rag_collection.find_one({"_id": project.document_id})
+    
+    # If not found by string ID, try as the doc_id field (llama-index uses this)
+    if not document:
+        document = await rag_collection.find_one({"metadata.doc_id": project.document_id})
+    
+    # Also try finding by the text field if document_id contains text
+    if not document:
+        # Try to find any document associated with this project
+        document = await rag_collection.find_one({})
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document content not found")
+    
+    return {
+        "text": document.get("text", ""),
+        "metadata": document.get("metadata", {})
+    }
+
 
 @router.get("/{project_id}/stages/{stage_number}", response_model=Stage)
 async def get_project_stage(
@@ -220,3 +289,69 @@ async def image_proxy(image_url: str = Query(..., description="The URL of the im
     """
     image_bytes = await project_service.proxy_image(image_url)
     return Response(content=image_bytes, media_type="image/png")
+
+@router.get("/{project_id}/file")
+async def get_project_file(
+    project_id: str = Path(..., description="Project ID"),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get the original uploaded file (PDF/document) for a project.
+    
+    Returns the file as a binary response with appropriate content type.
+    """
+    # First verify the user has access to this project
+    project = await project_service.get_project_by_id(db, project_id, user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Check if project has an original file
+    if not hasattr(project, 'original_file_id') or not project.original_file_id:
+        raise HTTPException(status_code=404, detail="No file uploaded for this project")
+    
+    # Get the file from the file service
+    file_data = await file_service.get_file(project.original_file_id)
+    if not file_data:
+        raise HTTPException(status_code=404, detail="File not found in storage")
+    
+    # Return the file with appropriate headers
+    return Response(
+        content=file_data["file_data"],
+        media_type=file_data["content_type"],
+        headers={
+            "Content-Disposition": f'inline; filename="{file_data["filename"]}"',
+            "Content-Length": str(file_data["file_size"])
+        }
+    )
+
+@router.get("/{project_id}/file/info")
+async def get_project_file_info(
+    project_id: str = Path(..., description="Project ID"),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get metadata about the original uploaded file for a project.
+    
+    Returns file info without the actual file content.
+    """
+    # First verify the user has access to this project
+    project = await project_service.get_project_by_id(db, project_id, user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Check if project has an original file
+    if not hasattr(project, 'original_file_id') or not project.original_file_id:
+        return {
+            "has_file": False,
+            "filename": None,
+            "file_id": None
+        }
+    
+    return {
+        "has_file": True,
+        "filename": getattr(project, 'original_filename', None),
+        "file_id": project.original_file_id
+    }
+

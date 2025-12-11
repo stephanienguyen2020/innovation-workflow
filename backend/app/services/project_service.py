@@ -21,12 +21,15 @@ from app.database.query.db_project import (
     update_stage_3,
     update_stage_4,
     update_document_id,
-    delete_all_data
+    update_original_file,
+    delete_all_data,
+    delete_project as db_delete_project
 )
 from app.schema.project import Project, Stage, Stage1Data
 from app.services.rag_service import rag_service
 from app.services.agent_service import agent_service
-from app.services.image_service import ImageGenerationService
+from app.services.image_service import image_service
+from app.services.file_service import file_service
 from app.constant.status import StageStatus
 from app.prompts.assistant import ProjectPrompts
 
@@ -112,17 +115,31 @@ class ProjectService:
         if not file.filename.endswith('.pdf'):
             raise HTTPException(status_code=400, detail="File must be a PDF")
 
+        # Read the file content once
+        content = await file.read()
+
         # Create temporary directory for file processing
         with tempfile.TemporaryDirectory() as temp_dir:
             pdf_path = os.path.join(temp_dir, file.filename)
             
-            # Save uploaded file
+            # Save uploaded file to temp directory for RAG processing
             with open(pdf_path, 'wb') as temp_file:
-                content = await file.read()
                 temp_file.write(content)
 
             try:
-                # Ingest PDF using directory reader and get document ID
+                # Store the original file in the database
+                original_file_id = await file_service.store_file(
+                    file_data=content,
+                    filename=file.filename,
+                    content_type="application/pdf",
+                    project_id=project_id,
+                    user_id=user_id
+                )
+                
+                # Update project with original file info
+                await update_original_file(db, project_id, original_file_id, file.filename)
+                
+                # Ingest PDF using directory reader and get document ID for RAG
                 parent_doc_id = await rag_service.ingest_documents_from_directory(
                     temp_dir,
                     filename=file.filename
@@ -412,22 +429,27 @@ class ProjectService:
             logger.info(f"✅ Successfully parsed ideas data, found {len(ideas_data.get('product_ideas', []))} ideas")
             print(f"✅ Successfully parsed ideas data, found {len(ideas_data.get('product_ideas', []))} ideas")
             
-            # Initialize image generation service
-            image_service = ImageGenerationService()
-            logger.info("✅ ImageGenerationService initialized")
-            print("✅ ImageGenerationService initialized")
+            # Ensure image service has database connection
+            if image_service.db is None:
+                image_service.set_db(db)
+            logger.info("✅ ImageGenerationService initialized with database")
+            print("✅ ImageGenerationService initialized with database")
             
             # Add problem reference and generate images for all ideas
             for idea in ideas_data["product_ideas"]:
                 idea["problem_id"] = selected_problem["id"]
+                idea_id = idea.get("id", str(uuid.uuid4()))
+                idea["id"] = idea_id
                 
-                # Generate image for each idea
+                # Generate image for each idea (now saves to database)
                 try:
                     logger.info(f"Starting image generation for idea: {idea['idea']}")
                     image_url = await image_service.generate_product_image(
                         idea_title=idea["idea"],
                         detailed_explanation=idea["detailed_explanation"],
-                        problem_domain=project.problem_domain
+                        problem_domain=project.problem_domain,
+                        project_id=project_id,
+                        idea_id=idea_id
                     )
                     idea["image_url"] = image_url
                     logger.info(f"Generated image for idea '{idea['idea']}': {image_url}")
@@ -627,14 +649,21 @@ class ProjectService:
         if target_idea is None:
             raise HTTPException(status_code=404, detail="Idea not found")
             
-        # Initialize image service and regenerate image
-        image_service = ImageGenerationService()
+        # Ensure image service has database connection
+        if image_service.db is None:
+            image_service.set_db(db)
         
         try:
+            # Get old image URL for cleanup
+            old_image_url = target_idea.get("image_url")
+            
             new_image_url = await image_service.regenerate_product_image(
                 idea_title=target_idea["idea"],
                 detailed_explanation=target_idea["detailed_explanation"],
-                problem_domain=project.problem_domain
+                problem_domain=project.problem_domain,
+                project_id=project_id,
+                idea_id=idea_id,
+                old_image_id=old_image_url
             )
             
             # Update the idea with new image URL
@@ -663,6 +692,21 @@ class ProjectService:
                 status_code=500,
                 detail=f"Failed to regenerate image: {str(e)}"
             )
+
+    @staticmethod
+    async def delete_project(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> bool:
+        """
+        Delete a specific project and its associated data.
+        
+        Args:
+            db: Database session
+            project_id: Project ID to delete
+            user_id: User ID for ownership verification
+            
+        Returns:
+            True if project was deleted successfully
+        """
+        return await db_delete_project(db, project_id, user_id)
 
     @staticmethod
     async def delete_all_data(db: AsyncIOMotorDatabase) -> Dict[str, int]:
