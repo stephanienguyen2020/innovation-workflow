@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function POST(
   request: Request,
@@ -15,6 +15,15 @@ export async function POST(
   }
 
   try {
+    // Parse the request body to get feedback (if provided)
+    let feedback: string | null = null;
+    try {
+      const body = await request.json();
+      feedback = body.feedback || null;
+    } catch {
+      // No body or invalid JSON, proceed without feedback
+    }
+
     const backendResponse = await fetch(
       `${API_URL}/api/projects/${projectId}/ideas/${ideaId}/regenerate-image`,
       {
@@ -23,6 +32,7 @@ export async function POST(
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
+        body: JSON.stringify({ feedback }),
       }
     );
 

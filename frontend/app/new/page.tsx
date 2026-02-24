@@ -7,8 +7,8 @@ import { useState, useEffect } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/context/AuthContext";
 
-// Define the backend API URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Backend API URL - must be configured via environment variable
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function NewProject() {
   const router = useRouter();
@@ -66,15 +66,14 @@ export default function NewProject() {
         throw new Error("No access token available");
       }
 
-      // Direct fetch to the backend API instead of going through Next.js API routes
-      const backendUrl = `${API_URL}/api/projects`;
-      console.log("Fetching directly from backend:", backendUrl);
+      // Create project through Next.js API route
+      const createUrl = `/api/projects`;
+      console.log("Creating project via API route:", createUrl);
 
-      const response = await fetch(backendUrl, {
+      const response = await fetch(createUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           problem_domain: problem,
@@ -94,8 +93,8 @@ export default function NewProject() {
       // Log the full response to inspect the structure
       console.log("Project creation response:", JSON.stringify(data, null, 2));
 
-      // Get the project ID from the response (use _id as it's the MongoDB format)
-      const projectId = data._id;
+      // Get the project ID from the response
+      const projectId = data.id;
 
       if (!projectId) {
         console.error("Project ID not found in response:", data);

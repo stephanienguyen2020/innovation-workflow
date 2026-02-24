@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function POST(request: NextRequest) {
   try {
@@ -74,9 +74,7 @@ export async function POST(request: NextRequest) {
       JSON.stringify(data, null, 2)
     );
 
-    // Ensure the MongoDB _id is preserved in the response
-    // The backend project schema uses `id: ObjectId = Field(alias="_id")`
-    console.log("Project created successfully with _id:", data._id || data.id);
+    console.log("Project created successfully with id:", data.id);
 
     // Return the created project data without modification
     return NextResponse.json(data);
@@ -90,7 +88,7 @@ export async function POST(request: NextRequest) {
 }
 
 export interface Project {
-  _id: string;
+  id: string;
   user_id: string;
   problem_domain: string;
   document_id: string | null;

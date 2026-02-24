@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Dict, List, Optional, Union
-from motor.motor_asyncio import AsyncIOMotorClientSession
-from bson import ObjectId
+from typing import Dict, List, Optional
+from google.cloud.firestore_v1.async_client import AsyncClient
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 # Message types
 USER_MESSAGE = "user"
@@ -9,7 +9,7 @@ ASSISTANT_MESSAGE = "assistant"
 SYSTEM_MESSAGE = "system"
 
 async def add_message(
-    session: AsyncIOMotorClientSession,
+    db: AsyncClient,
     session_id: str,
     message: str,
     role: str = USER_MESSAGE,
@@ -19,7 +19,7 @@ async def add_message(
     Add a new message to the chat history.
     
     Args:
-        session: MongoDB session
+        session: Firestore session
         session_id: Unique identifier for the user's session
         message: Content of the message
         role: Role of the message sender (user, assistant, system)
@@ -28,7 +28,7 @@ async def add_message(
     Returns:
         ID of the inserted message
     """
-    collection = session.client.db.messages
+    collection = db.collection("messages")
     
     # Create message document
     message_doc = {
@@ -38,17 +38,15 @@ async def add_message(
         "timestamp": datetime.utcnow(),
         "metadata": metadata or {}
     }
-    print(message_doc)
-    # Insert the message
-    result = await collection.insert_one(message_doc, session=session)
+    doc_ref = collection.document()
+    await doc_ref.set(message_doc)
     
     # Update the conversation to include this message
-    await update_conversation(session, session_id, str(result.inserted_id))
-    
-    return str(result.inserted_id)
+    await update_conversation(db, session_id, doc_ref.id)
+    return doc_ref.id
 
 async def get_messages(
-    session: AsyncIOMotorClientSession,
+    db: AsyncClient,
     session_id: str,
     limit: int = 50,
     skip: int = 0,
@@ -58,7 +56,7 @@ async def get_messages(
     Get messages from a chat session.
     
     Args:
-        session: MongoDB session
+        session: Firestore session
         session_id: Unique identifier for the user's session
         limit: Maximum number of messages to return
         skip: Number of messages to skip
@@ -67,43 +65,34 @@ async def get_messages(
     Returns:
         List of message documents
     """
-    collection = session.client.db.messages
+    collection = db.collection("messages")
     
-    # Build query filter
-    query = {"session_id": session_id}
-    if role:
-        query["role"] = role
-    
-    # Get messages sorted by timestamp
-    cursor = collection.find(
-        query, 
-        session=session
-    ).sort("timestamp", 1).skip(skip).limit(limit)
-    
-    # Convert to list
-    messages = await cursor.to_list(length=limit)
-    
-    # Convert ObjectId to string
-    for message in messages:
-        message["_id"] = str(message["_id"])
-    
+    query = collection.where(filter=FieldFilter("session_id", "==", session_id)).order_by("timestamp").limit(limit)
+    docs = await query.get()
+    messages = []
+    for doc in docs[skip:]:
+        data = doc.to_dict()
+        if role and data.get("role") != role:
+            continue
+        data["id"] = doc.id
+        messages.append(data)
     return messages
 
 async def get_conversation_history(
-    session: AsyncIOMotorClientSession,
+    db: AsyncClient,
     session_id: str,
 ) -> List[Dict]:
     """
     Get the complete conversation history formatted for AI context.
     
     Args:
-        session: MongoDB session
+        session: Firestore session
         session_id: Unique identifier for the user's session
     
     Returns:
         List of message documents formatted for AI context
     """
-    messages = await get_messages(session, session_id, limit=100)
+    messages = await get_messages(db, session_id, limit=100)
     
     # Format messages for AI context
     formatted_messages = []
@@ -116,7 +105,7 @@ async def get_conversation_history(
     return formatted_messages
 
 async def update_conversation(
-    session: AsyncIOMotorClientSession,
+    db: AsyncClient,
     session_id: str,
     message_id: str,
 ) -> None:
@@ -124,60 +113,58 @@ async def update_conversation(
     Update the conversation to include a new message.
     
     Args:
-        session: MongoDB session
+        session: Firestore session
         session_id: Unique identifier for the user's session
         message_id: ID of the message to add
     """
-    collection = session.client.db.conversations
-    
-    # Check if conversation exists
-    conversation = await collection.find_one({"session_id": session_id}, session=session)
-    
-    if conversation:
-        # Update existing conversation
-        await collection.update_one(
-            {"session_id": session_id},
-            {"$push": {"message_ids": message_id}, "$set": {"updated_at": datetime.utcnow()}},
-            session=session
-        )
+    collection = db.collection("conversations")
+    doc_ref = collection.document(session_id)
+    doc = await doc_ref.get()
+    if doc.exists:
+        data = doc.to_dict()
+        message_ids = data.get("message_ids", [])
+        message_ids.append(message_id)
+        await doc_ref.update({
+            "message_ids": message_ids,
+            "updated_at": datetime.utcnow()
+        })
     else:
-        # Create new conversation
-        await collection.insert_one(
-            {
-                "session_id": session_id,
-                "message_ids": [message_id],
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            },
-            session=session
-        )
+        await doc_ref.set({
+            "session_id": session_id,
+            "message_ids": [message_id],
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
 
 async def delete_conversation(
-    session: AsyncIOMotorClientSession,
+    db: AsyncClient,
     session_id: str,
 ) -> bool:
     """
     Delete an entire conversation and its messages.
     
     Args:
-        session: MongoDB session
+        session: Firestore session
         session_id: Unique identifier for the user's session
     
     Returns:
         True if deleted successfully
     """
-    # Delete all messages in the session
-    messages_collection = session.client.db.messages
-    await messages_collection.delete_many({"session_id": session_id}, session=session)
-    
-    # Delete the conversation record
-    conversations_collection = session.client.db.conversations
-    result = await conversations_collection.delete_one({"session_id": session_id}, session=session)
-    
-    return result.deleted_count > 0
+    messages_collection = db.collection("messages")
+    message_docs = await messages_collection.where(filter=FieldFilter("session_id", "==", session_id)).get()
+    for doc in message_docs:
+        await messages_collection.document(doc.id).delete()
+
+    conversations_collection = db.collection("conversations")
+    doc_ref = conversations_collection.document(session_id)
+    doc = await doc_ref.get()
+    if not doc.exists:
+        return False
+    await doc_ref.delete()
+    return True
 
 async def search_messages(
-    session: AsyncIOMotorClientSession,
+    db: AsyncClient,
     session_id: str,
     query: str,
 ) -> List[Dict]:
@@ -185,26 +172,19 @@ async def search_messages(
     Search for messages containing specific text.
     
     Args:
-        session: MongoDB session
+        session: Firestore session
         session_id: Unique identifier for the user's session
         query: Text to search for in messages
     
     Returns:
         List of matching message documents
     """
-    collection = session.client.db.messages
-    
-    # Create text search query
-    result = await collection.find(
-        {
-            "session_id": session_id,
-            "content": {"$regex": query, "$options": "i"}  # Case-insensitive search
-        },
-        session=session
-    ).sort("timestamp", 1).to_list(length=100)
-    
-    # Convert ObjectId to string
-    for message in result:
-        message["_id"] = str(message["_id"])
-    
-    return result
+    collection = db.collection("messages")
+    docs = await collection.where(filter=FieldFilter("session_id", "==", session_id)).order_by("timestamp").limit(100).get()
+    results = []
+    for doc in docs:
+        data = doc.to_dict()
+        if query.lower() in data.get("content", "").lower():
+            data["id"] = doc.id
+            results.append(data)
+    return results

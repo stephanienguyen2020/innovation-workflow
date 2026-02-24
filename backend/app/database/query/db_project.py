@@ -1,12 +1,12 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from bson import ObjectId
+from typing import Optional, List, Dict
 from fastapi import HTTPException
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from google.cloud.firestore_v1.async_client import AsyncClient
+from google.cloud.firestore_v1.base_query import FieldFilter
 from app.schema.project import Project, Stage, Stage1Data, Stage2Data, Stage3Data, Stage4Data
 from app.constant.status import StageStatus
 
-async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain: str) -> Project:
+async def create_project(db: AsyncClient, user_id: str, problem_domain: str) -> Project:
     """
     Create a new project.
     
@@ -18,70 +18,46 @@ async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain:
     Returns:
         Newly created project
     """
-    # Create a new ObjectId for the project
-    project_id = ObjectId()
-    
-    # Create project with required fields
+    project_doc = db.collection("projects").document()
     project = Project(
-        _id=project_id, 
-        user_id=ObjectId(user_id),
+        id=project_doc.id,
+        user_id=user_id,
         problem_domain=problem_domain
     )
-    
-    # Insert into database
-    await db.projects.insert_one(project.dict(by_alias=True))
+    project_dict = project.dict()
+    await project_doc.set(project_dict)
     return project
 
-async def get_project(db: AsyncIOMotorDatabase, project_id: str, user_id: str = None) -> Optional[Project]:
+async def get_project(db: AsyncClient, project_id: str, user_id: str = None) -> Optional[Project]:
     """
     Get project by ID with optional user validation.
-    
-    Args:
-        db: Database session
-        project_id: Project ID
-        user_id: Optional user ID to validate project ownership
-        
-    Returns:
-        Project if found and (user_id is None or matches project's user_id)
-        
-    Raises:
-        HTTPException: If project not found or doesn't belong to specified user
+    Handles both ObjectId and String formats for IDs.
     """
-    query = {"_id": ObjectId(project_id)}
-    
-    # Add user_id to query if provided
-    if user_id:
-        query["user_id"] = ObjectId(user_id)
-    
-    project = await db.projects.find_one(query)
-    
-    if not project:
-        if user_id:
-            # We don't reveal whether the project exists or just doesn't belong to user
-            raise HTTPException(status_code=404, detail="Project not found or doesn't belong to you")
-        else:
-            raise HTTPException(status_code=404, detail="Project not found")
-            
-    return Project(**project)
+    project_doc = db.collection("projects").document(project_id)
+    doc = await project_doc.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Project not found")
+    data = doc.to_dict()
+    if user_id and data.get("user_id") != user_id:
+        raise HTTPException(status_code=404, detail="Project not found or doesn't belong to you")
+    data["id"] = doc.id
+    return Project(**data)
 
-async def get_projects_by_user_id(db: AsyncIOMotorDatabase, user_id: str) -> List[Project]:
+async def get_projects_by_user_id(db: AsyncClient, user_id: str) -> List[Project]:
     """
     Get all projects for a specific user.
-    
-    Args:
-        db: Database session
-        user_id: User ID to filter projects by
-        
-    Returns:
-        List of projects belonging to the user
+    Handles both ObjectId and String formats for user_id.
     """
-    cursor = db.projects.find({"user_id": ObjectId(user_id)})
+    query = db.collection("projects").where(filter=FieldFilter("user_id", "==", user_id))
+    docs = await query.get()
     projects = []
-    async for project in cursor:
-        projects.append(Project(**project))
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        projects.append(Project(**data))
     return projects
 
-async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: str) -> Project:
+async def update_stage_1(db: AsyncClient, project_id: str, analysis: str) -> Project:
     """
     Update stage 1 with analysis and mark it as completed.
     
@@ -113,20 +89,15 @@ async def update_stage_1(db: AsyncIOMotorDatabase, project_id: str, analysis: st
         stage.updated_at = datetime.utcnow()
     
     # Update project
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "stages": [stage.dict() for stage in project.stages],
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
+    await db.collection("projects").document(project_id).update({
+        "stages": [stage.dict() for stage in project.stages],
+        "updated_at": datetime.utcnow()
+    })
     
     return project
 
 async def update_stage_2(
-    db: AsyncIOMotorDatabase, 
+    db: AsyncClient,
     project_id: str, 
     stage_data: Dict
 ) -> Project:
@@ -175,20 +146,15 @@ async def update_stage_2(
     project.updated_at = datetime.utcnow()
     
     # Update project
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "stages": [stage.dict() for stage in project.stages],
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
+    await db.collection("projects").document(project_id).update({
+        "stages": [stage.dict() for stage in project.stages],
+        "updated_at": datetime.utcnow()
+    })
     
     return project
 
 async def update_stage_3(
-    db: AsyncIOMotorDatabase,
+    db: AsyncClient,
     project_id: str,
     stage_data: Dict
 ) -> Project:
@@ -224,20 +190,15 @@ async def update_stage_3(
     project.updated_at = datetime.utcnow()
     
     # Update project
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "stages": [stage.dict() for stage in project.stages],
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
+    await db.collection("projects").document(project_id).update({
+        "stages": [stage.dict() for stage in project.stages],
+        "updated_at": datetime.utcnow()
+    })
     
     return project
 
 async def update_stage_4(
-    db: AsyncIOMotorDatabase, 
+    db: AsyncClient,
     project_id: str, 
     stage_data: Dict
 ) -> Project:
@@ -265,19 +226,14 @@ async def update_stage_4(
     project.updated_at = datetime.utcnow()
     
     # Update project
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "stages": [stage.dict() for stage in project.stages],
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
+    await db.collection("projects").document(project_id).update({
+        "stages": [stage.dict() for stage in project.stages],
+        "updated_at": datetime.utcnow()
+    })
     
     return project
 
-async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int) -> Stage:
+async def get_stage(db: AsyncClient, project_id: str, stage_number: int) -> Stage:
     if not 1 <= stage_number <= 4:
         raise HTTPException(status_code=400, detail="Invalid stage number. Must be between 1 and 4")
     
@@ -289,7 +245,7 @@ async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int
     
     return stage
 
-async def get_project_pdf_data(db: AsyncIOMotorDatabase, project_id: str) -> Dict:
+async def get_project_pdf_data(db: AsyncClient, project_id: str) -> Dict:
     """
     Get project data formatted for PDF generation.
     
@@ -338,7 +294,7 @@ async def get_project_pdf_data(db: AsyncIOMotorDatabase, project_id: str) -> Dic
         }
     }
 
-async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document_id: str) -> Project:
+async def update_document_id(db: AsyncClient, project_id: str, document_id: str) -> Project:
     """
     Update only the document_id of a project without modifying stage data.
     
@@ -354,20 +310,15 @@ async def update_document_id(db: AsyncIOMotorDatabase, project_id: str, document
     project = await get_project(db, project_id)
     
     # Update only document_id and timestamp
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "document_id": document_id,
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
+    await db.collection("projects").document(project_id).update({
+        "document_id": document_id,
+        "updated_at": datetime.utcnow()
+    })
     
     return project
 
 async def update_original_file(
-    db: AsyncIOMotorDatabase, 
+    db: AsyncClient,
     project_id: str, 
     file_id: str,
     filename: str
@@ -388,20 +339,15 @@ async def update_original_file(
     project = await get_project(db, project_id)
 
     # Update original file info
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {
-            "$set": {
-                "original_file_id": file_id,
-                "original_filename": filename,
-                "updated_at": datetime.utcnow()
-            }
-        }
-    )
+    await db.collection("projects").document(project_id).update({
+        "original_file_id": file_id,
+        "original_filename": filename,
+        "updated_at": datetime.utcnow()
+    })
     
     return project
 
-async def delete_project(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> bool:
+async def delete_project(db: AsyncClient, project_id: str, user_id: str) -> bool:
     """
     Delete a specific project and its associated data.
     
@@ -417,28 +363,35 @@ async def delete_project(db: AsyncIOMotorDatabase, project_id: str, user_id: str
         HTTPException: If project not found or user doesn't own it
     """
     # First verify the project exists and belongs to the user
-    # Convert user_id to ObjectId for proper comparison
-    project = await db.projects.find_one({
-        "_id": ObjectId(project_id),
-        "user_id": ObjectId(user_id)
-    })
-    
-    if not project:
+    project_doc = db.collection("projects").document(project_id)
+    doc = await project_doc.get()
+    if not doc.exists or doc.to_dict().get("user_id") != user_id:
         raise HTTPException(status_code=404, detail="Project not found or you don't have permission to delete it")
-    
+
+    project_data = doc.to_dict()
+    document_id = project_data.get("document_id")
+
     # Delete associated images
-    await db.images.delete_many({"project_id": project_id})
-    
-    # Delete the project
-    result = await db.projects.delete_one({
-        "_id": ObjectId(project_id),
-        "user_id": ObjectId(user_id)
-    })
-    
-    return result.deleted_count > 0
+    images_docs = await db.collection("images").where(filter=FieldFilter("project_id", "==", project_id)).get()
+    for image_doc in images_docs:
+        await db.collection("images").document(image_doc.id).delete()
+
+    # Delete associated RAG chunks (keyed by parent_doc_id = project.document_id)
+    if document_id:
+        rag_docs = await db.collection("rag_documents").where(filter=FieldFilter("parent_doc_id", "==", document_id)).get()
+        for rag_doc in rag_docs:
+            await db.collection("rag_documents").document(rag_doc.id).delete()
+
+    # Delete associated uploaded files
+    file_docs = await db.collection("uploaded_files").where(filter=FieldFilter("project_id", "==", project_id)).get()
+    for file_doc in file_docs:
+        await db.collection("uploaded_files").document(file_doc.id).delete()
+
+    await project_doc.delete()
+    return True
 
 
-async def delete_all_data(db: AsyncIOMotorDatabase) -> Dict[str, int]:
+async def delete_all_data(db: AsyncClient) -> Dict[str, int]:
     """
     Delete all documents from both rag_documents and projects collections.
     
@@ -449,12 +402,19 @@ async def delete_all_data(db: AsyncIOMotorDatabase) -> Dict[str, int]:
         Dictionary containing count of deleted documents from each collection
     """
     # Delete all documents from rag_documents collection
-    rag_result = await db.rag_documents.delete_many({})
-    
-    # Delete all documents from projects collection
-    projects_result = await db.projects.delete_many({})
-    
+    rag_docs = await db.collection("rag_documents").get()
+    rag_deleted = 0
+    for doc in rag_docs:
+        await db.collection("rag_documents").document(doc.id).delete()
+        rag_deleted += 1
+
+    project_docs = await db.collection("projects").get()
+    project_deleted = 0
+    for doc in project_docs:
+        await db.collection("projects").document(doc.id).delete()
+        project_deleted += 1
+
     return {
-        "rag_documents_deleted": rag_result.deleted_count,
-        "projects_deleted": projects_result.deleted_count
+        "rag_documents_deleted": rag_deleted,
+        "projects_deleted": project_deleted
     }

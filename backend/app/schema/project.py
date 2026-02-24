@@ -1,7 +1,6 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
-from bson import ObjectId
 from app.constant.status import StageStatus, ProjectStatus
 import uuid
 
@@ -55,8 +54,8 @@ class ProjectCreate(BaseModel):
     problem_domain: str
     
 class Project(BaseModel):
-    id: ObjectId = Field(alias="_id")
-    user_id: ObjectId
+    id: str
+    user_id: str
     problem_domain: str
     document_id: Optional[str] = None  # Document ID at project level since it's used across stages
     original_file_id: Optional[str] = None  # ID of the original uploaded file (PDF/document)
@@ -74,7 +73,6 @@ class Project(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         json_encoders={
-            ObjectId: str,
             ProjectStatus: lambda x: x.value,
             StageStatus: lambda x: x.value
         },

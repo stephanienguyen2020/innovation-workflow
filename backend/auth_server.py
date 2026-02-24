@@ -15,21 +15,16 @@ from app.database.query.db_auth import DBAuth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  
-    # Initialize MongoDB collections
-    await session_manager.create_collections([
-        "users"
-    ])
-    
     # Initialize admin account
     try:
-        db_auth = DBAuth(session_manager.db)
+        db_auth = DBAuth(session_manager.client)
         auth_service = AuthService(db_auth)
         await auth_service.ensure_admin_account_exists()
     except Exception as e:
         print(f"Warning: Failed to initialize admin account: {str(e)}")
     
     yield
-    # Close MongoDB connection when app shuts down
+    # Close Firestore connection when app shuts down
     if session_manager.client is not None:
         await session_manager.close()
         
@@ -56,7 +51,7 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 @app.get("/health")
 async def health_check():
     """Health check endpoint to verify the API is running."""
-    return {"status": "ok", "database": "mongodb", "service": "auth-only"}
+    return {"status": "ok", "database": "firestore", "service": "auth-only"}
 
 # Include auth router
 app.include_router(auth.router)

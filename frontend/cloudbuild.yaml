@@ -1,0 +1,12 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '--build-arg', 'NEXT_PUBLIC_BACKEND_URL=$_NEXT_PUBLIC_BACKEND_URL',
+      '-t', 'gcr.io/$PROJECT_ID/innovation-workflow-frontend',
+      '.'
+    ]
+images:
+  - 'gcr.io/$PROJECT_ID/innovation-workflow-frontend'
+substitutions:
+    _NEXT_PUBLIC_BACKEND_URL: ''  # REQUIRED: Set this to your Cloud Run backend URL

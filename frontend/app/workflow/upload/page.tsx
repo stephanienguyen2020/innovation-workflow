@@ -9,8 +9,22 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-// Define the backend API URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Define the backend API URL - must be configured via environment variable
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+function renderMarkdown(text: string) {
+  return text.split("\n").map((line, lineIdx, arr) => {
+    const parts = line.split("**");
+    return (
+      <span key={lineIdx}>
+        {parts.map((part, i) =>
+          i % 2 === 1 ? <strong key={i}>{part}</strong> : part
+        )}
+        {lineIdx < arr.length - 1 && "\n"}
+      </span>
+    );
+  });
+}
 
 function UploadContent() {
   const router = useRouter();
@@ -27,6 +41,7 @@ function UploadContent() {
     Array<{ name: string; uploadedAt: string }>
   >([]);
   const [isRestoringState, setIsRestoringState] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     // Get the project ID from URL params or localStorage as fallback
@@ -153,15 +168,12 @@ function UploadContent() {
     formData.append("file", file);
 
     try {
-      // Upload directly to the backend (not through Next.js API route)
-      const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/upload`;
-      console.log(`Uploading file directly to backend: ${backendUrl}`);
+      // Upload through Next.js API route
+      const uploadUrl = `/api/projects/${projectId}/upload`;
+      console.log(`Uploading file via API route: ${uploadUrl}`);
 
-      const response = await fetch(backendUrl, {
+      const response = await fetch(uploadUrl, {
         method: "POST",
-        headers: {
-          Authorization: `${auth.tokenType} ${auth.accessToken}`,
-        },
         body: formData,
       });
 
@@ -223,6 +235,42 @@ function UploadContent() {
     }
   };
 
+  const handleUploadText = async (text: string) => {
+    if (!projectId) {
+      setError("Project ID is missing");
+      return false;
+    }
+
+    const auth = getAuthToken();
+    if (!auth) {
+      setError("Authentication failed. Please log in again.");
+      return false;
+    }
+
+    try {
+      const uploadTextUrl = `/api/projects/${projectId}/upload-text`;
+      const response = await fetch(uploadTextUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Text upload failed:", errorText);
+        throw new Error(errorText || "Failed to upload text");
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Error uploading text:", err);
+      setError(err instanceof Error ? err.message : "Failed to upload text");
+      return false;
+    }
+  };
+
   const handleGenerateAnalysis = async () => {
     if (!projectId) {
       setError("Project ID is missing");
@@ -231,26 +279,22 @@ function UploadContent() {
 
     setIsAnalyzing(true);
     setError(null);
+    setAnalysis("");
 
     try {
-      // Get access token from local storage
-      const auth = getAuthToken();
-      if (!auth) {
-        throw new Error("Authentication failed. Please log in again.");
+      // If no PDF uploaded but text is pasted, upload the text first
+      if (uploadedFiles.length === 0 && pastedText.trim()) {
+        const textUploaded = await handleUploadText(pastedText.trim());
+        if (!textUploaded) {
+          setIsAnalyzing(false);
+          return;
+        }
       }
 
-      // Call the Stage 1 Part 2 API endpoint
-      const backendUrl = `${API_URL}/api/projects/${projectId}/stages/1/generate`;
-      console.log("Generating analysis using:", backendUrl);
+      const proxyUrl = `/api/projects/${projectId}/stages/1/generate`;
 
-      const response = await fetch(backendUrl, {
+      const response = await fetch(proxyUrl, {
         method: "POST",
-        headers: {
-          Authorization: `${auth.tokenType} ${auth.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        // If there's pasted text, include it in the request body
-        ...(pastedText && { body: JSON.stringify({ text: pastedText }) }),
       });
 
       if (!response.ok) {
@@ -262,23 +306,60 @@ function UploadContent() {
         throw new Error(errorText || "Failed to generate analysis");
       }
 
-      const data = await response.json();
-      console.log("Analysis response:", data);
-
-      if (!data?.data?.analysis) {
-        throw new Error("No analysis data received from the server");
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Streaming not supported");
       }
 
-      setAnalysis(data.data.analysis);
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let streamedAnalysis = "";
 
-      // Save to localStorage
-      saveStateToLocalStorage();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6);
+            try {
+              const data = JSON.parse(dataStr);
+
+              if (eventType === "chunk" && data.text) {
+                streamedAnalysis += data.text;
+                setAnalysis(streamedAnalysis);
+              } else if (eventType === "done" && data.analysis) {
+                setAnalysis(data.analysis);
+                streamedAnalysis = data.analysis;
+              } else if (eventType === "error") {
+                throw new Error(data.message || "Analysis failed");
+              }
+            } catch (parseErr) {
+              if (eventType === "error") {
+                throw parseErr;
+              }
+            }
+          }
+        }
+      }
+
+      if (!streamedAnalysis) {
+        throw new Error("No analysis data received from the server");
+      }
     } catch (err) {
       console.error("Error generating analysis:", err);
       setError(
         err instanceof Error ? err.message : "An unexpected error occurred"
       );
-      setAnalysis(""); // Clear any previous analysis on error
+      setAnalysis("");
     } finally {
       setIsAnalyzing(false);
     }
@@ -309,6 +390,11 @@ function UploadContent() {
                   onClick={() => {
                     // Save current state before navigating
                     saveStateToLocalStorage();
+
+                    if (!projectId) {
+                      setError("Project ID is missing. Please start a new project.");
+                      return;
+                    }
 
                     // Navigate to the corresponding page based on step number
                     if (step === 1) {
@@ -378,7 +464,45 @@ function UploadContent() {
             {/* Upload Section */}
             <div className="space-y-4">
               <h3 className="text-2xl font-bold">Upload PDF document</h3>
-              <div className="border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center min-h-[300px]">
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center min-h-[300px] transition-colors ${
+                  isDragging
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-300"
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(true);
+                }}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(false);
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDragging(false);
+
+                  const file = e.dataTransfer.files?.[0];
+                  if (!file) return;
+
+                  if (file.type !== "application/pdf") {
+                    setError("Only PDF files are supported");
+                    return;
+                  }
+
+                  setError(null);
+                  console.log("File dropped:", file.name);
+                  await handleUploadToServer(file);
+                }}
+              >
                 <input
                   type="file"
                   id="file-upload"
@@ -398,6 +522,8 @@ function UploadContent() {
                   <span className="text-xl font-medium">
                     {isUploading
                       ? "Uploading..."
+                      : isDragging
+                      ? "Drop PDF here"
                       : "Drop PDF here or click to upload"}
                   </span>
                   {fileUploadStatus && (
@@ -487,7 +613,7 @@ function UploadContent() {
               <h3 className="text-2xl font-bold">Analysis Results:</h3>
               <div className="p-4 border rounded-lg bg-gray-50">
                 <p className="text-gray-600 leading-relaxed whitespace-pre-line">
-                  {analysis}
+                  {renderMarkdown(analysis)}
                 </p>
               </div>
             </div>

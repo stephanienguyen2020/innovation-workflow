@@ -177,15 +177,14 @@ class APIGatewayMiddleware(BaseHTTPMiddleware):
                 
                 # Only process the body for non-streaming responses
                 if not hasattr(response, "body_iterator"):
-                    # Response is already complete, like JSONResponse
                     if hasattr(response, "body"):
                         response_body = response.body
+                elif orig_response.media_type == "text/event-stream":
+                    response = orig_response
                 else:
-                    # Stream response body
                     async for chunk in response.body_iterator:
                         response_body += chunk
-                    
-                    # Create a new response with the same content
+
                     response = Response(
                         content=response_body,
                         status_code=orig_response.status_code,

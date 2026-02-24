@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Any
+from google.cloud.firestore_v1 import Query
 from uuid import uuid4
 
 from llama_index.core.query_engine.sub_question_query_engine import SubQuestionQueryEngine
@@ -31,8 +32,8 @@ class ChatService:
         if self._sub_question_engine is not None:
             return self._sub_question_engine
 
-        # Create base query engine using RAG service
-        base_engine = rag_service.index.as_query_engine(similarity_top_k=3)
+        # Create base query engine using RAG service (Firestore-backed SummaryIndex)
+        base_engine = await rag_service.create_document_query_engine()
 
         # Create query engine tool
         query_engine_tool = QueryEngineTool(
@@ -258,11 +259,11 @@ class ChatService:
         """
         collection = get_collection("conversations")
         
-        cursor = collection.find().sort("updated_at", -1).skip(skip).limit(limit)
-        sessions = await cursor.to_list(length=limit)
-        
-        # Convert MongoDB ObjectId to string
-        for session in sessions:
-            session["_id"] = str(session["_id"])
-        
+        query = collection.order_by("updated_at", direction=Query.DESCENDING).offset(skip).limit(limit)
+        docs = await query.get()
+        sessions = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            sessions.append(data)
         return sessions

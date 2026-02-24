@@ -1,4 +1,5 @@
 from typing import List, Dict, Optional
+from google.cloud.firestore_v1 import ArrayUnion, ArrayRemove
 from app.constant.config import ADMIN_EMAIL
 
 
@@ -22,19 +23,18 @@ class EmailWhitelistValidator:
             raise Exception("Database not initialized. Call set_db() first.")
     
     async def _load_from_db(self) -> Dict:
-        """Load allowed emails configuration from MongoDB"""
+        """Load allowed emails configuration from Firestore"""
         self._ensure_db()
         try:
-            collection = self.db["allowed_emails"]
-            doc = await collection.find_one({"_id": "email_whitelist"})
-            if doc:
-                return {
-                    "allowed_usernames": doc.get("allowed_usernames", []),
-                    "allowed_domains": doc.get("allowed_domains", [])
-                }
-            else:
-                # Document doesn't exist, return empty
+            doc_ref = self.db.collection("allowed_emails").document("email_whitelist")
+            doc = await doc_ref.get()
+            if not doc.exists:
                 return {"allowed_usernames": [], "allowed_domains": []}
+            data = doc.to_dict()
+            return {
+                "allowed_usernames": data.get("allowed_usernames", []),
+                "allowed_domains": data.get("allowed_domains", [])
+            }
         except Exception as e:
             print(f"Error loading allowed emails from DB: {e}")
             return {"allowed_usernames": [], "allowed_domains": []}
@@ -137,11 +137,10 @@ class EmailWhitelistValidator:
         self._ensure_db()
         
         try:
-            collection = self.db["allowed_emails"]
-            await collection.update_one(
-                {"_id": "email_whitelist"},
-                {"$addToSet": {"allowed_usernames": username}},
-                upsert=True
+            doc_ref = self.db.collection("allowed_emails").document("email_whitelist")
+            await doc_ref.set(
+                {"allowed_usernames": ArrayUnion([username])},
+                merge=True
             )
             self._cache = None  # Clear cache
             return True
@@ -154,10 +153,10 @@ class EmailWhitelistValidator:
         self._ensure_db()
         
         try:
-            collection = self.db["allowed_emails"]
-            await collection.update_one(
-                {"_id": "email_whitelist"},
-                {"$pull": {"allowed_usernames": username}}
+            doc_ref = self.db.collection("allowed_emails").document("email_whitelist")
+            await doc_ref.set(
+                {"allowed_usernames": ArrayRemove([username])},
+                merge=True
             )
             self._cache = None  # Clear cache
             return True
@@ -170,11 +169,10 @@ class EmailWhitelistValidator:
         self._ensure_db()
         
         try:
-            collection = self.db["allowed_emails"]
-            await collection.update_one(
-                {"_id": "email_whitelist"},
-                {"$addToSet": {"allowed_domains": domain}},
-                upsert=True
+            doc_ref = self.db.collection("allowed_emails").document("email_whitelist")
+            await doc_ref.set(
+                {"allowed_domains": ArrayUnion([domain])},
+                merge=True
             )
             self._cache = None  # Clear cache
             return True
@@ -187,10 +185,10 @@ class EmailWhitelistValidator:
         self._ensure_db()
         
         try:
-            collection = self.db["allowed_emails"]
-            await collection.update_one(
-                {"_id": "email_whitelist"},
-                {"$pull": {"allowed_domains": domain}}
+            doc_ref = self.db.collection("allowed_emails").document("email_whitelist")
+            await doc_ref.set(
+                {"allowed_domains": ArrayRemove([domain])},
+                merge=True
             )
             self._cache = None  # Clear cache
             return True

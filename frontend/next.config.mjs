@@ -5,6 +5,10 @@ try {
   // ignore error
 }
 
+// Backend URL - defaults to localhost for development
+const backendUrl =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
@@ -16,6 +20,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  output: "standalone", // Required for Docker/containerized deployments
   experimental: {
     webpackBuildWorker: true,
     parallelServerBuildTraces: true,
@@ -26,21 +31,21 @@ const nextConfig = {
       // Direct auth routes
       {
         source: "/auth/login",
-        destination: "http://127.0.0.1:8000/login",
+        destination: `${backendUrl}/login`,
       },
       {
         source: "/auth/signup",
-        destination: "http://127.0.0.1:8000/signup",
+        destination: `${backendUrl}/signup`,
       },
       {
         source: "/auth/logout",
-        destination: "http://127.0.0.1:8000/logout",
+        destination: `${backendUrl}/logout`,
       },
       // Backend API routes - change this to be more specific
       // Don't rewrite the frontend API routes like /api/projects
       {
         source: "/api/backend/:path*",
-        destination: "http://127.0.0.1:8000/api/:path*",
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },

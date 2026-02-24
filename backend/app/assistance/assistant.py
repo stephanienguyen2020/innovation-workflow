@@ -1,9 +1,8 @@
 # Created: dylannguyen
 import json
 import os
-import openai
 from app.constant.assistant import INSTRUCTION
-from app.constant.config import OPENAI_MODEL, OPENAI_API_KEY
+from app.constant.config import GEMINI_MODEL, GEMINI_API_KEY
 
 class Assistant:
     assistant_id = None
@@ -12,7 +11,6 @@ class Assistant:
     instruction = INSTRUCTION
     
     def __init__(self):
-        self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
         self.name = "Zelta"
         
         if Assistant.assistant_id:
@@ -31,28 +29,37 @@ class Assistant:
             )
         
     def create_assistant(self, name, instructions, tools):
-        assistant = self.client.beta.assistants.create(
-            name = name, 
-            instructions=instructions, 
-            tools = tools,
-            model = OPENAI_MODEL,
-            response_format={ "type": "json_object" }
-        )
-        Assistant.assistant_id = assistant.id
-        return assistant
+        Assistant.assistant_id = Assistant.assistant_id or "gemini_assistant"
+        return {
+            "id": Assistant.assistant_id,
+            "name": name,
+            "instructions": instructions,
+            "tools": tools,
+            "model": GEMINI_MODEL,
+            "api_key_set": bool(GEMINI_API_KEY)
+        }
 
     def retrieve_assistant(self, assistant_id):
-        my_assistant = self.client.beta.assistants.retrieve(assistant_id = assistant_id)
-        return my_assistant
+        return {
+            "id": assistant_id,
+            "name": self.name,
+            "instructions": Assistant.instruction,
+            "tools": Assistant.functions["functions"],
+            "model": GEMINI_MODEL,
+            "api_key_set": bool(GEMINI_API_KEY)
+        }
 
     def update_assistant(self, assistant_id, instruction, name, tools):
-        self.client.beta.assistants.update(
-            assistant_id = assistant_id,
-            model = OPENAI_MODEL,
-            instructions = instruction,
-            name = name, 
-            tools = tools
-        )
+        Assistant.assistant_id = assistant_id
+        Assistant.instruction = instruction
+        return {
+            "id": assistant_id,
+            "name": name,
+            "instructions": instruction,
+            "tools": tools,
+            "model": GEMINI_MODEL,
+            "api_key_set": bool(GEMINI_API_KEY)
+        }
 
     def list_memories(self):
         """

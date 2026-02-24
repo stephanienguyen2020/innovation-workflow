@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from typing import Optional
 from pydantic import BaseModel
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from google.cloud.firestore_v1.async_client import AsyncClient
 from app.database.database import get_db
 from app.database.query.db_auth import DBAuth
 
@@ -39,7 +39,7 @@ token_extractor = CookieOrHeaderToken()
 
 async def get_current_user(
     token: str = Depends(token_extractor),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ) -> UserProfile:
     """
     Verify JWT token and return user info.
@@ -80,7 +80,7 @@ async def get_current_user(
             
         # Convert to UserProfile model
         user_profile = UserProfile(
-            id=str(user["_id"]),
+            id=str(user["id"]),
             first_name=user["first_name"],
             last_name=user["last_name"],
             email=user["email"],

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Path, HTTPException
 from fastapi.responses import Response
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from google.cloud.firestore_v1.async_client import AsyncClient
 
 from app.database.database import get_db
 from app.services.image_service import image_service
@@ -13,13 +13,12 @@ router = APIRouter(
 @router.get("/{image_id}")
 async def get_image(
     image_id: str = Path(..., description="Image ID from database"),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Retrieve an image stored in the database.
     
-    This endpoint serves images that were generated and stored in MongoDB,
-    allowing them to persist beyond DALL-E's temporary URL expiration.
+    This endpoint serves images that were generated and stored in Firestore.
     """
     # Ensure image service has database connection
     if image_service.db is None:

@@ -79,7 +79,7 @@ export default function PastProjectsPage() {
       }
 
       // Remove the project from the local state
-      setProjects((prev) => prev.filter((p) => p._id !== projectId));
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
     } catch (err) {
       console.error("Error deleting project:", err);
       setError("Failed to delete project. Please try again.");
@@ -147,10 +147,10 @@ export default function PastProjectsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {projects.map((project) => (
-                  <tr key={project._id} className="hover:bg-gray-50">
+                  <tr key={project.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <button
-                        onClick={() => router.push(`/project/${project._id}`)}
+                        onClick={() => router.push(`/project/${project.id}`)}
                         className="text-sm font-medium text-gray-900 hover:text-[#001DFA]"
                       >
                         {project.problem_domain}
@@ -175,15 +175,15 @@ export default function PastProjectsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {showDeleteConfirm === project._id ? (
+                      {showDeleteConfirm === project.id ? (
                         <div className="flex items-center justify-end gap-2">
                           <span className="text-sm text-gray-600">Delete?</span>
                           <button
-                            onClick={() => handleDeleteProject(project._id)}
-                            disabled={deletingProjectId === project._id}
+                            onClick={() => handleDeleteProject(project.id)}
+                            disabled={deletingProjectId === project.id}
                             className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
                           >
-                            {deletingProjectId === project._id ? (
+                            {deletingProjectId === project.id ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                               "Yes"
@@ -198,7 +198,7 @@ export default function PastProjectsPage() {
                         </div>
                       ) : (
                         <button
-                          onClick={() => setShowDeleteConfirm(project._id)}
+                          onClick={() => setShowDeleteConfirm(project.id)}
                           className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                           title="Delete project"
                         >

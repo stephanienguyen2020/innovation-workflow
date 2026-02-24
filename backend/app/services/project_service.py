@@ -1,13 +1,13 @@
 from fastapi import HTTPException, UploadFile
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from google.cloud.firestore_v1.async_client import AsyncClient
+import asyncio
 import tempfile
 import os
 import json
 import logging
 from datetime import datetime
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, AsyncGenerator, Any
 import uuid
-from bson import ObjectId
 from pydantic import BaseModel, Field
 
 from app.database.query.db_project import (
@@ -45,7 +45,7 @@ class AnalysisResponse(BaseModel):
 
 class ProjectService:
     @staticmethod
-    async def create_project(db: AsyncIOMotorDatabase, user_id: str, problem_domain: str) -> Project:
+    async def create_project(db: AsyncClient, user_id: str, problem_domain: str) -> Project:
         """
         Create a new project.
         
@@ -60,7 +60,7 @@ class ProjectService:
         return await create_project(db, user_id, problem_domain)
 
     @staticmethod
-    async def get_user_projects(db: AsyncIOMotorDatabase, user_id: str) -> List[Project]:
+    async def get_user_projects(db: AsyncClient, user_id: str) -> List[Project]:
         """
         Get all projects belonging to a specific user.
         
@@ -74,7 +74,7 @@ class ProjectService:
         return await get_projects_by_user_id(db, user_id)
 
     @staticmethod
-    async def get_project_by_id(db: AsyncIOMotorDatabase, project_id: str, user_id: str = None) -> Project:
+    async def get_project_by_id(db: AsyncClient, project_id: str, user_id: str = None) -> Project:
         """
         Get project by ID with optional user validation.
         
@@ -89,13 +89,42 @@ class ProjectService:
         return await db_get_project(db, project_id, user_id)
 
     @staticmethod
-    async def get_stage(db: AsyncIOMotorDatabase, project_id: str, stage_number: int, user_id: str) -> Stage:
+    async def get_stage(db: AsyncClient, project_id: str, stage_number: int, user_id: str) -> Stage:
         """Get specific stage of a project."""
         project = await db_get_project(db, project_id, user_id)
         return next((stage for stage in project.stages if stage.stage_number == stage_number), None)
 
     @staticmethod
-    async def upload_document(db: AsyncIOMotorDatabase, project_id: str, file: UploadFile, user_id: str) -> Stage:
+    async def save_stage_progress(
+        db: AsyncClient, project_id: str, stage_number: int, data: dict, status: str, user_id: str
+    ) -> Stage:
+        """Save progress for a specific stage."""
+        from app.database.database import session_manager
+        project = await db_get_project(db, project_id, user_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        stage = next((s for s in project.stages if s.stage_number == stage_number), None)
+        if not stage:
+            raise HTTPException(status_code=404, detail="Stage not found")
+
+        # Update stage data and status
+        if data:
+            stage.data = {**stage.data, **data} if stage.data else data
+        if status in ("completed", "in_progress", "not_started"):
+            stage.status = status
+        stage.updated_at = datetime.utcnow()
+        project.updated_at = datetime.utcnow()
+
+        # Save to Firestore
+        doc_ref = db.collection("projects").document(project_id)
+        stages_data = [s.dict() for s in project.stages]
+        await doc_ref.update({"stages": stages_data, "updated_at": project.updated_at})
+
+        return stage
+
+    @staticmethod
+    async def upload_document(db: AsyncClient, project_id: str, file: UploadFile, user_id: str) -> Stage:
         """
         Stage 1 - Part 1: Upload PDF and store document ID.
         
@@ -108,8 +137,10 @@ class ProjectService:
         Returns:
             Stage 1 with document ID
         """
+        print(f"DEBUG: upload_document called with project_id={project_id}, user_id={user_id}")
         project = await db_get_project(db, project_id, user_id)
         if not project:
+            print(f"DEBUG: Project not found for id={project_id} and user={user_id}")
             raise HTTPException(status_code=404, detail="Project not found")
 
         if not file.filename.endswith('.pdf'):
@@ -155,15 +186,42 @@ class ProjectService:
                 raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
 
     @staticmethod
-    async def analyze_document(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> Stage:
+    async def upload_text(db: AsyncClient, project_id: str, text: str, user_id: str) -> Stage:
+        """
+        Stage 1 - Part 1 (alt): Upload plain text and store as a document for RAG.
+        """
+        project = await db_get_project(db, project_id, user_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        try:
+            # Ingest the text into RAG storage
+            doc_id = await rag_service.ingest_text(
+                text,
+                metadata={
+                    "project_id": project_id,
+                    "source": "pasted_text",
+                    "filename": "pasted_text.txt",
+                }
+            )
+
+            # Update document ID on the project
+            project = await update_document_id(db, project_id, doc_id)
+
+            return project.stages[0]
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error uploading text: {str(e)}")
+
+    @staticmethod
+    async def analyze_document(db: AsyncClient, project_id: str, user_id: str) -> Stage:
         """
         Stage 1 - Part 2: Generate analysis for the uploaded document.
-        
+
         Args:
             db: Database session
             project_id: Project ID
             user_id: User ID for authorization
-            
+
         Returns:
             Stage 1 with analysis
         """
@@ -205,7 +263,7 @@ class ProjectService:
                 updated_project = await update_stage_1(
                     db, 
                     project_id, 
-                    analysis=analysis_response.analysis.content
+                    analysis=analysis_response.analysis.content,
                 )
                 return updated_project.stages[0]
                 
@@ -221,7 +279,113 @@ class ProjectService:
             raise HTTPException(status_code=500, detail=f"Error analyzing document: {str(e)}")
 
     @staticmethod
-    async def process_stage_2(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> Stage:
+    async def analyze_document_stream(
+        db: AsyncClient, project_id: str, user_id: str
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        project = await db_get_project(db, project_id, user_id)
+        if not project:
+            yield {"event": "error", "data": {"message": "Project not found"}}
+            return
+
+        if not project.document_id:
+            yield {"event": "error", "data": {"message": "No document uploaded. Please upload a document first."}}
+            return
+
+        try:
+            # Read raw document text directly from Firestore (no LLM call needed)
+            print(f"DEBUG STREAM: Starting analysis for project {project_id}, document_id={project.document_id}")
+            yield {"event": "status", "data": {"message": "Reading document content..."}}
+            doc_content = await rag_service.get_document_text(project.document_id)
+            print(f"DEBUG STREAM: Got document text, length={len(doc_content)}")
+
+            if not doc_content.strip():
+                yield {"event": "error", "data": {"message": "Document content is empty."}}
+                return
+
+            yield {"event": "status", "data": {"message": "Generating analysis..."}}
+            print(f"DEBUG STREAM: Calling Gemini for analysis...")
+
+            problem_domain = project.problem_domain
+            streaming_prompt = f"""Based on the following document content, analyze it to understand what it reveals about the {problem_domain} context.
+
+DOCUMENT CONTENT:
+{doc_content}
+
+Provide a focused analysis (150-250 words) that:
+1. Identifies what type of document this is
+2. Explains the context relevant to {problem_domain}
+3. Highlights specific problems or challenges that emerge
+4. Suggests opportunities for innovation
+
+Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, markdown, or bullet points. Just write plain text."""
+
+            # Use google-genai SDK for streaming
+            from app.constant.config import GEMINI_MODEL
+
+            full_text = ""
+            try:
+                client = agent_service.native_client
+                print(f"DEBUG STREAM: Using model: {GEMINI_MODEL}, prompt length: {len(streaming_prompt)} chars")
+
+                response = client.models.generate_content_stream(
+                    model=GEMINI_MODEL,
+                    contents=streaming_prompt,
+                )
+                print(f"DEBUG STREAM: Got response iterator, reading chunks...")
+                for chunk in response:
+                    delta = chunk.text
+                    if delta:
+                        full_text += delta
+                        print(f"DEBUG STREAM: Chunk received, length={len(delta)}")
+                        yield {"event": "chunk", "data": {"text": delta}}
+                print(f"DEBUG STREAM: Streaming complete, total length={len(full_text)}")
+            except Exception as e:
+                print(f"DEBUG STREAM: Gemini streaming failed: {type(e).__name__}: {e}")
+                import asyncio
+                # Retry once with same model
+                print(f"DEBUG STREAM: Retry attempt 1, waiting 3s...")
+                await asyncio.sleep(3)
+                try:
+                    response = agent_service.native_client.models.generate_content(
+                        model=GEMINI_MODEL,
+                        contents=streaming_prompt,
+                    )
+                    full_text = response.text
+                    print(f"DEBUG STREAM: Retry succeeded, length={len(full_text)}")
+                    yield {"event": "chunk", "data": {"text": full_text}}
+                except Exception as retry_err:
+                    print(f"DEBUG STREAM: Retry failed: {retry_err}")
+                    # Fall back to flash model
+                    try:
+                        fallback_model = "gemini-3-flash-preview"
+                        print(f"DEBUG STREAM: Trying fallback model: {fallback_model}")
+                        response = agent_service.native_client.models.generate_content(
+                            model=fallback_model,
+                            contents=streaming_prompt,
+                        )
+                        full_text = response.text
+                        print(f"DEBUG STREAM: Fallback succeeded, length={len(full_text)}")
+                        yield {"event": "chunk", "data": {"text": full_text}}
+                    except Exception as fallback_err:
+                        print(f"DEBUG STREAM: Fallback also failed: {fallback_err}")
+                        yield {"event": "error", "data": {"message": "Gemini API is temporarily unavailable. Please try again in a moment."}}
+                        return
+
+            cleaned_text = full_text.strip()
+            if cleaned_text.startswith('"') and cleaned_text.endswith('"'):
+                cleaned_text = cleaned_text[1:-1]
+
+            yield {"event": "done", "data": {"analysis": cleaned_text}}
+
+            if cleaned_text:
+                await update_stage_1(db, project_id, analysis=cleaned_text)
+
+        except Exception as e:
+            logger.error(f"Error in streaming analysis: {e}", exc_info=True)
+            yield {"event": "error", "data": {"message": f"Error analyzing document: {str(e)}"}}
+
+    @staticmethod
+    async def process_stage_2(db: AsyncClient, project_id: str, user_id: str) -> Stage:
         """
         Process stage 2: Generate problem statements based on analysis.
         """
@@ -237,35 +401,30 @@ class ProjectService:
         analysis = stage_1.data.get("analysis")
         if not analysis:
             raise HTTPException(status_code=400, detail="Stage 1 analysis is missing")
-            
-        # Create query engine with stage-specific parser
-        query_engine = await rag_service.create_document_query_engine(
-            project.document_id,
-            stage_number=2
+
+        # Read raw document text for additional context (fast Firestore read, no LLM)
+        doc_text = await rag_service.get_document_text(project.document_id)
+
+        # Build prompt with all context — single direct LLM call, no RAG overhead
+        enriched_prompt = ProjectPrompts.STAGE_2_PROBLEMS + (
+            f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
         )
-        
-        # Create tools and agent
-        tools = agent_service.create_document_analysis_tools(query_engine, stage_number=2)
-        agent = agent_service.create_agent(tools)
-        
-        # Generate problem statements with structured output
-        response = await agent_service.run_analysis(
-            agent,
-            ProjectPrompts.STAGE_2_PROBLEMS,
+        response = await agent_service.generate_json(
+            enriched_prompt,
             context={
                 "analysis": analysis,
                 "problem_domain": project.problem_domain
             }
         )
-        
+
         try:
             # Check if response is empty or None
             if not response or (isinstance(response, str) and not response.strip()):
                 raise HTTPException(
-                    status_code=500, 
+                    status_code=500,
                     detail="Agent returned empty response. Check model configuration and prompt formatting."
                 )
-            
+
             # Handle different response formats
             if isinstance(response, str) and "Sorry, I can't assist with that" in response:
                 raise HTTPException(status_code=500, detail="Failed to generate problem statements")
@@ -309,27 +468,26 @@ class ProjectService:
 
     @staticmethod
     async def process_stage_3(
-        db: AsyncIOMotorDatabase, 
+        db: AsyncClient, 
         project_id: str,
         user_id: str,
         selected_problem_id: Optional[str] = None,
-        custom_problem: Optional[str] = None
+        custom_problem: Optional[str] = None,
     ) -> Stage:
-        logger.info(f"🚀 Starting process_stage_3 for project {project_id}")
-        print(f"🚀 Starting process_stage_3 for project {project_id}")
         """
         Process stage 3: Generate product ideas based on a single selected or custom problem statement.
-        
+
         Args:
             db: Database session
             project_id: Project ID
             user_id: User ID for authorization
             selected_problem_id: ID of a problem selected from stage 2 (mutually exclusive with custom_problem)
             custom_problem: New problem statement as string (mutually exclusive with selected_problem_id)
-            
+
         Returns:
             Updated stage 3 data
         """
+        logger.info(f"Starting process_stage_3 for project {project_id}")
         # Get project and validate prior stages
         project = await db_get_project(db, project_id, user_id)
         if not project:
@@ -402,46 +560,37 @@ class ProjectService:
                 stage_data
             )
             
-        # Create query engine with stage-specific parser
-        query_engine = await rag_service.create_document_query_engine(
-            project.document_id,
-            stage_number=3
+        # Read raw document text for additional context (fast Firestore read, no LLM)
+        doc_text = await rag_service.get_document_text(project.document_id)
+
+        # Single direct LLM call — no RAG overhead
+        enriched_prompt = ProjectPrompts.STAGE_3_IDEAS + (
+            f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
         )
-        
-        # Create tools and agent
-        tools = agent_service.create_document_analysis_tools(query_engine, stage_number=3)
-        agent = agent_service.create_agent(tools)
-        
-        # Generate product ideas with structured output
-        response = await agent_service.run_analysis(
-            agent,
-            ProjectPrompts.STAGE_3_IDEAS,
+        response = await agent_service.generate_json(
+            enriched_prompt,
             context={
                 "analysis": analysis,
-                "problem_statements": [selected_problem],  # Pass as list to match template expectation
+                "problem_statements": [selected_problem],
                 "problem_domain": project.problem_domain
             }
         )
-        
+
         try:
-            # The response should already be in structured format
             ideas_data = response if isinstance(response, dict) else json.loads(response)
-            logger.info(f"✅ Successfully parsed ideas data, found {len(ideas_data.get('product_ideas', []))} ideas")
-            print(f"✅ Successfully parsed ideas data, found {len(ideas_data.get('product_ideas', []))} ideas")
-            
+            logger.info(f"✅ Parsed ideas data, found {len(ideas_data.get('product_ideas', []))} ideas")
+
             # Ensure image service has database connection
             if image_service.db is None:
                 image_service.set_db(db)
-            logger.info("✅ ImageGenerationService initialized with database")
-            print("✅ ImageGenerationService initialized with database")
-            
-            # Add problem reference and generate images for all ideas
+
+            # Assign IDs and problem references
             for idea in ideas_data["product_ideas"]:
                 idea["problem_id"] = selected_problem["id"]
-                idea_id = idea.get("id", str(uuid.uuid4()))
-                idea["id"] = idea_id
-                
-                # Generate image for each idea (now saves to database)
+                idea["id"] = idea.get("id", str(uuid.uuid4()))
+
+            # Generate images for all ideas IN PARALLEL
+            async def generate_image_for_idea(idea):
                 try:
                     logger.info(f"Starting image generation for idea: {idea['idea']}")
                     image_url = await image_service.generate_product_image(
@@ -449,16 +598,18 @@ class ProjectService:
                         detailed_explanation=idea["detailed_explanation"],
                         problem_domain=project.problem_domain,
                         project_id=project_id,
-                        idea_id=idea_id
+                        idea_id=idea["id"],
                     )
                     idea["image_url"] = image_url
-                    logger.info(f"Generated image for idea '{idea['idea']}': {image_url}")
-                    print(f"✅ Generated image for idea '{idea['idea']}': {image_url}")
+                    logger.info(f"✅ Generated image for idea '{idea['idea']}'")
                 except Exception as e:
-                    logger.error(f"Failed to generate image for idea '{idea['idea']}': {str(e)}", exc_info=True)
-                    print(f"❌ Failed to generate image for idea '{idea['idea']}': {str(e)}")
+                    logger.error(f"❌ Failed to generate image for idea '{idea['idea']}': {str(e)}")
                     idea["image_url"] = None
-            
+
+            await asyncio.gather(
+                *[generate_image_for_idea(idea) for idea in ideas_data["product_ideas"]]
+            )
+
             # Update stage 3 with product ideas
             updated_project = await update_stage_3(
                 db,
@@ -476,7 +627,7 @@ class ProjectService:
 
     @staticmethod
     async def process_stage_4(
-        db: AsyncIOMotorDatabase, 
+        db: AsyncClient, 
         project_id: str,
         chosen_solution_id: str,
         user_id: str
@@ -559,14 +710,13 @@ class ProjectService:
         Returns:
             The image content in bytes.
         """
-        image_service = ImageGenerationService()
         image_bytes = image_service.download_image(image_url)
         if not image_bytes:
             raise HTTPException(status_code=404, detail="Image not found or could not be downloaded")
         return image_bytes
 
     @staticmethod
-    async def get_project_pdf(db: AsyncIOMotorDatabase, project_id: str) -> bytes:
+    async def get_project_pdf(db: AsyncClient, project_id: str) -> bytes:
         """
         Generate PDF from project data.
         
@@ -608,20 +758,22 @@ class ProjectService:
 
     @staticmethod
     async def regenerate_idea_image(
-        db: AsyncIOMotorDatabase,
+        db: AsyncClient,
         project_id: str,
         idea_id: str,
-        user_id: str
+        user_id: str,
+        feedback: str = None,
     ) -> Dict:
         """
         Regenerate image for a specific product idea.
-        
+
         Args:
             db: Database session
             project_id: Project ID
             idea_id: ID of the idea to regenerate image for
             user_id: User ID for authorization
-            
+            feedback: Optional user feedback on what to change in the visualization
+
         Returns:
             Dictionary containing the updated idea with new image URL
         """
@@ -663,7 +815,8 @@ class ProjectService:
                 problem_domain=project.problem_domain,
                 project_id=project_id,
                 idea_id=idea_id,
-                old_image_id=old_image_url
+                old_image_id=old_image_url,
+                feedback=feedback,
             )
             
             # Update the idea with new image URL
@@ -694,7 +847,120 @@ class ProjectService:
             )
 
     @staticmethod
-    async def delete_project(db: AsyncIOMotorDatabase, project_id: str, user_id: str) -> bool:
+    async def regenerate_idea(
+        db: AsyncClient,
+        project_id: str,
+        idea_id: str,
+        user_id: str,
+        feedback: str,
+    ) -> Dict:
+        """
+        Regenerate (iterate on) a specific product idea using user feedback.
+
+        Implements professor's Prompt 3: given the original idea and user feedback,
+        generate one improved idea that is preferred by users.
+
+        Args:
+            db: Database session
+            project_id: Project ID
+            idea_id: ID of the idea to improve
+            user_id: User ID for authorization
+            feedback: User feedback on what to improve in the idea
+
+        Returns:
+            Dictionary containing the updated idea with the improved content and new image URL
+        """
+        project = await db_get_project(db, project_id, user_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        stage_1 = next((s for s in project.stages if s.stage_number == 1), None)
+        stage_3 = next((s for s in project.stages if s.stage_number == 3), None)
+
+        if not stage_3 or stage_3.status != StageStatus.COMPLETED:
+            raise HTTPException(status_code=400, detail="Stage 3 must be completed first")
+
+        product_ideas = stage_3.data.get("product_ideas", [])
+        idea_index = None
+        target_idea = None
+        for i, idea in enumerate(product_ideas):
+            if idea.get("id") == idea_id:
+                idea_index = i
+                target_idea = idea
+                break
+
+        if target_idea is None:
+            raise HTTPException(status_code=404, detail="Idea not found")
+
+        analysis = stage_1.data.get("analysis", "") if stage_1 else ""
+
+        # Find the problem statement associated with this idea
+        stage_2 = next((s for s in project.stages if s.stage_number == 2), None)
+        problem_statements = stage_2.data.get("problem_statements", []) if stage_2 else []
+        problem_id = target_idea.get("problem_id")
+        selected_problem = next(
+            (p for p in problem_statements if p.get("id") == problem_id),
+            {"problem": target_idea.get("idea", ""), "explanation": ""}
+        )
+
+        response = await agent_service.generate_json(
+            ProjectPrompts.STAGE_3_IDEAS_ITERATION,
+            context={
+                "problem_domain": project.problem_domain,
+                "analysis": analysis,
+                "problem_statements": selected_problem,
+                "original_idea": f"{target_idea['idea']}\n\n{target_idea['detailed_explanation']}",
+                "feedback": feedback,
+            }
+        )
+
+        try:
+            result = response if isinstance(response, dict) else json.loads(response)
+            improved = result.get("improved_idea", {})
+
+            if not improved:
+                raise HTTPException(status_code=500, detail="No improved idea returned from agent")
+
+            # Preserve the original idea's ID and problem reference
+            improved["id"] = idea_id
+            improved["problem_id"] = problem_id
+
+            # Ensure image service has database connection
+            if image_service.db is None:
+                image_service.set_db(db)
+
+            # Delete old image and generate a new one for the improved idea
+            old_image_url = target_idea.get("image_url")
+            new_image_url = await image_service.regenerate_product_image(
+                idea_title=improved["idea"],
+                detailed_explanation=improved["detailed_explanation"],
+                problem_domain=project.problem_domain,
+                project_id=project_id,
+                idea_id=idea_id,
+                old_image_id=old_image_url,
+                feedback=None,
+            )
+            improved["image_url"] = new_image_url
+
+            # Replace the original idea with the improved one in stage 3
+            product_ideas[idea_index] = improved
+            await update_stage_3(db, project_id, {"product_ideas": product_ideas})
+
+            logger.info(f"Regenerated idea '{improved['idea']}' for project {project_id}")
+            return {
+                "idea_id": idea_id,
+                "idea": improved,
+                "success": True,
+            }
+
+        except (json.JSONDecodeError, KeyError) as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Invalid response format from agent: {str(e)}"
+            )
+
+    @staticmethod
+    async def delete_project(db: AsyncClient, project_id: str, user_id: str) -> bool:
         """
         Delete a specific project and its associated data.
         
@@ -709,7 +975,7 @@ class ProjectService:
         return await db_delete_project(db, project_id, user_id)
 
     @staticmethod
-    async def delete_all_data(db: AsyncIOMotorDatabase) -> Dict[str, int]:
+    async def delete_all_data(db: AsyncClient) -> Dict[str, int]:
         """
         Delete all documents from both rag_documents and projects collections.
         
@@ -722,10 +988,6 @@ class ProjectService:
         try:
             # Delete all data from collections
             result = await delete_all_data(db)
-            
-            # Reset RAG service state
-            await rag_service.initialize()
-            
             return result
         except Exception as e:
             raise HTTPException(

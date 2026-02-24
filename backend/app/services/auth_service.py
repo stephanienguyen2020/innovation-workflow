@@ -12,7 +12,6 @@ from app.schema.user import (
 from app.services.email_service import EmailService
 from app.utils.email_validator import email_validator
 from app.constant.config import ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_FIRST_NAME, ADMIN_LAST_NAME
-from bson import ObjectId
 
 class AuthService:
     def __init__(self, db_auth: DBAuth):
@@ -20,13 +19,11 @@ class AuthService:
         self.email_service = EmailService()
 
     def _serialize_response(self, obj: Dict) -> Dict:
-        """Convert datetime and ObjectId objects to strings"""
+        """Convert datetime objects to strings"""
         serialized = {}
         for key, value in obj.items():
             if isinstance(value, datetime):
                 serialized[key] = value.isoformat()
-            elif isinstance(value, ObjectId):
-                serialized[key] = str(value)
             elif isinstance(value, dict):
                 serialized[key] = self._serialize_response(value)
             else:
@@ -152,16 +149,16 @@ class AuthService:
                 )
             
             # Update last login
-            await self.db_auth.update_last_login(str(user["_id"]))
-            
+            await self.db_auth.update_last_login(str(user["id"]))
+
             # Create access token
             access_token = create_access_token(data={"sub": user["email"]})
-            
+
             # Prepare response
             response_data = {
                 "access_token": access_token,
                 "user": {
-                    "userId": str(user["_id"]),
+                    "userId": str(user["id"]),
                     "username": user["email"],
                     "priviledge": user.get("role", "user")
                 }

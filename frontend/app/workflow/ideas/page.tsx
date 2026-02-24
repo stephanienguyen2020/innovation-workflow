@@ -33,10 +33,13 @@ interface Stage {
 function formatDetailedExplanation(text: string): string {
   if (!text) return "";
 
-  // Replace **Section Headers**: with bold formatting and add line breaks
   let formatted = text
-    // Convert **Header**: to HTML bold with line breaks
+    // Convert **Header**: to bold with line break before
     .replace(/\*\*(.*?)\*\*:/g, "<br/><strong>$1:</strong>")
+    // Convert remaining **text** to inline bold
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    // Convert *text* to italic
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
     // Convert line breaks to HTML
     .replace(/\n/g, "<br/>")
     // Convert bullet points if any
@@ -50,11 +53,11 @@ function formatDetailedExplanation(text: string): string {
 function IdeationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const projectId = searchParams.get("projectId");
+  const projectIdFromUrl = searchParams.get("projectId");
+  const projectId = projectIdFromUrl || (typeof window !== "undefined" ? localStorage.getItem("currentProjectId") : null);
   const problemId = searchParams.get("problemId");
   const customProblem = searchParams.get("problem");
   const customExplanation = searchParams.get("explanation");
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [productIdeas, setProductIdeas] = useState<ProductIdea[]>([]);
@@ -69,6 +72,9 @@ function IdeationContent() {
     null
   );
   const [progressPercent, setProgressPercent] = useState(0);
+  const [imageFeedback, setImageFeedback] = useState<Record<string, string>>(
+    {}
+  );
 
   useEffect(() => {
     if (!projectId) {
@@ -268,6 +274,8 @@ function IdeationContent() {
     setRegeneratingImageId(ideaId);
 
     try {
+      const feedback = imageFeedback[ideaId] || null;
+
       const response = await fetch(
         `/api/projects/${projectId}/ideas/${ideaId}/regenerate-image`,
         {
@@ -275,6 +283,7 @@ function IdeationContent() {
           headers: {
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({ feedback }),
         }
       );
 
@@ -290,12 +299,26 @@ function IdeationContent() {
           idea.id === ideaId ? { ...idea, image_url: result.image_url } : idea
         )
       );
+
+      // Clear the feedback after successful regeneration
+      setImageFeedback((prev) => {
+        const updated = { ...prev };
+        delete updated[ideaId];
+        return updated;
+      });
     } catch (error) {
       console.error("Error regenerating image:", error);
       alert("Failed to regenerate image. Please try again.");
     } finally {
       setRegeneratingImageId(null);
     }
+  };
+
+  const handleFeedbackChange = (ideaId: string, value: string) => {
+    setImageFeedback((prev) => ({
+      ...prev,
+      [ideaId]: value,
+    }));
   };
 
   const handleRegenerateIdeas = async () => {
@@ -570,7 +593,12 @@ function IdeationContent() {
             </button>
           </div>
           {researchSummary ? (
-            <p className="text-lg leading-relaxed">{researchSummary}</p>
+            <div
+              className="text-lg leading-relaxed"
+              dangerouslySetInnerHTML={{
+                __html: formatDetailedExplanation(researchSummary),
+              }}
+            />
           ) : (
             <p className="text-gray-500 text-lg">
               No research summary available. Please upload research documents
@@ -621,11 +649,36 @@ function IdeationContent() {
                             <h4 className="font-semibold text-gray-800">
                               Product Concept Visualization
                             </h4>
+                          </div>
+                          <div className="relative rounded-lg overflow-hidden bg-gray-100 mb-4">
+                            <img
+                              src={idea.image_url}
+                              alt={`Concept visualization for ${idea.idea}`}
+                              className="w-full max-w-2xl h-auto object-cover"
+                              style={{ aspectRatio: "16/9" }}
+                            />
+                          </div>
+
+                          {/* Feedback Input for Image Regeneration */}
+                          <div className="flex items-end gap-3 mt-4">
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                id={`feedback-${idea.id}`}
+                                value={imageFeedback[idea.id] || ""}
+                                onChange={(e) =>
+                                  handleFeedbackChange(idea.id, e.target.value)
+                                }
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="Describe changes for the image (optional)"
+                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-gray-300 focus:border-gray-300 outline-none"
+                                disabled={regeneratingImageId === idea.id}
+                              />
+                            </div>
                             <button
                               onClick={(e) => handleRegenerateImage(idea.id, e)}
                               disabled={regeneratingImageId === idea.id}
-                              className="flex items-center gap-2 px-3 py-1 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
-                              title="Regenerate image"
+                              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#001DFA] hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <RefreshCw
                                 className={`w-4 h-4 ${
@@ -638,14 +691,6 @@ function IdeationContent() {
                                 ? "Generating..."
                                 : "Regenerate"}
                             </button>
-                          </div>
-                          <div className="relative rounded-lg overflow-hidden bg-gray-100">
-                            <img
-                              src={idea.image_url}
-                              alt={`Concept visualization for ${idea.idea}`}
-                              className="w-full max-w-2xl h-auto object-cover"
-                              style={{ aspectRatio: "16/9" }}
-                            />
                           </div>
                         </div>
                       )}

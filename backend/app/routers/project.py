@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Path, Query, Body, HTTPException
-from fastapi.responses import Response
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from fastapi.responses import Response, StreamingResponse
+from google.cloud.firestore_v1.async_client import AsyncClient
+from google.cloud.firestore_v1.base_query import FieldFilter
 from typing import Optional, Dict, List
+import json
 
 from app.database.database import get_db
 from app.schema.project import Project, Stage, ProjectCreate
@@ -20,7 +22,7 @@ router = APIRouter(
 async def create_project(
     project_data: ProjectCreate,
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ) -> Project:
     """
     Create a new project.
@@ -38,7 +40,7 @@ async def create_project(
 @router.get("/", response_model=List[Project])
 async def get_user_projects(
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ) -> List[Project]:
     """
     Get all projects belonging to the current authenticated user.
@@ -56,7 +58,7 @@ async def get_user_projects(
 async def get_project(
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ) -> Project:
     """
     Get project by ID, validating that it belongs to the current authenticated user.
@@ -76,7 +78,7 @@ async def get_project(
 async def delete_project(
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Delete a project by ID, validating that it belongs to the current authenticated user.
@@ -97,7 +99,7 @@ async def delete_project(
 async def get_project_document(
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Get the original document content for a project.
@@ -117,24 +119,18 @@ async def get_project_document(
         raise HTTPException(status_code=404, detail="No document found for this project")
     
     # Get the document from rag_documents collection
-    rag_collection = db["rag_documents"]
-    document = await rag_collection.find_one({"_id": project.document_id})
-    
-    # If not found by string ID, try as the doc_id field (llama-index uses this)
-    if not document:
-        document = await rag_collection.find_one({"metadata.doc_id": project.document_id})
-    
-    # Also try finding by the text field if document_id contains text
-    if not document:
-        # Try to find any document associated with this project
-        document = await rag_collection.find_one({})
-    
+    rag_collection = db.collection("rag_documents")
+    doc_ref = rag_collection.document(project.document_id)
+    document = await doc_ref.get()
+    if not document.exists:
+        docs = await rag_collection.where(filter=FieldFilter("parent_doc_id", "==", project.document_id)).limit(1).get()
+        document = docs[0] if docs else None
     if not document:
         raise HTTPException(status_code=404, detail="Document content not found")
     
     return {
-        "text": document.get("text", ""),
-        "metadata": document.get("metadata", {})
+        "text": document.to_dict().get("text", ""),
+        "metadata": document.to_dict().get("metadata", {})
     }
 
 
@@ -143,7 +139,7 @@ async def get_project_stage(
     project_id: str = Path(..., description="Project ID"),
     stage_number: int = Path(..., ge=1, le=4, description="Stage number (1-4)"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ) -> Stage:
     """
     Get specific stage of a project.
@@ -156,12 +152,25 @@ async def get_project_stage(
     """
     return await project_service.get_stage(db, project_id, stage_number, user.id)
 
+@router.post("/{project_id}/stages/{stage_number}", response_model=Stage)
+async def save_stage_progress(
+    project_id: str = Path(..., description="Project ID"),
+    stage_number: int = Path(..., ge=1, le=4, description="Stage number (1-4)"),
+    body: Dict = Body(...),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db),
+) -> Stage:
+    """Save progress for a specific stage."""
+    return await project_service.save_stage_progress(
+        db, project_id, stage_number, body.get("data", {}), body.get("status", "in_progress"), user.id
+    )
+
 @router.post("/{project_id}/stages/1/upload", response_model=Stage)
 async def upload_document(
     file: UploadFile = File(...),
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ) -> Stage:
     """
     Stage 1 - Part 1: Upload PDF document.
@@ -175,15 +184,30 @@ async def upload_document(
     """
     return await project_service.upload_document(db, project_id, file, user.id)
 
+@router.post("/{project_id}/stages/1/upload-text", response_model=Stage)
+async def upload_text(
+    project_id: str = Path(..., description="Project ID"),
+    body: Dict = Body(...),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db)
+) -> Stage:
+    """
+    Stage 1 - Part 1 (alt): Upload plain text content instead of PDF.
+    """
+    text = body.get("text", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text content is required")
+    return await project_service.upload_text(db, project_id, text, user.id)
+
 @router.post("/{project_id}/stages/1/generate", response_model=Stage)
 async def analyze_document(
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db),
 ) -> Stage:
     """
     Stage 1 - Part 2: Generate document analysis.
-    
+
     This endpoint:
     1. Validates user has access to the project
     2. Validates that a document has been uploaded
@@ -194,15 +218,39 @@ async def analyze_document(
     """
     return await project_service.analyze_document(db, project_id, user.id)
 
+@router.post("/{project_id}/stages/1/generate/stream")
+async def analyze_document_stream(
+    project_id: str = Path(..., description="Project ID"),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db),
+):
+    print(f"DEBUG ROUTER: Stream endpoint hit for project {project_id}, user {user.id}")
+
+    async def event_generator():
+        async for event in project_service.analyze_document_stream(db, project_id, user.id):
+            event_type = event["event"]
+            event_data = json.dumps(event["data"])
+            yield f"event: {event_type}\ndata: {event_data}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 @router.post("/{project_id}/stages/2/generate", response_model=Stage)
 async def generate_problem_statements(
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db),
 ) -> Stage:
     """
     Stage 2: Generate problem statements based on analysis.
-    
+
     This endpoint:
     1. Validates user has access to the project
     2. Validates that Stage 1 is completed
@@ -219,11 +267,11 @@ async def generate_product_ideas(
     selected_problem_id: Optional[str] = Query(None, description="ID of the selected problem from stage 2"),
     custom_problem: Optional[str] = Query(None, description="Custom problem statement text"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db),
 ) -> Stage:
     """
     Stage 3: Generate product ideas based on a single selected or custom problem statement.
-    
+
     This endpoint:
     1. Validates user has access to the project
     2. Validates that Stages 1 and 2 are completed
@@ -231,15 +279,15 @@ async def generate_product_ideas(
     4. If custom problem provided, adds it to stage 2's custom problems
     5. Generates product ideas based on the selected/custom problem
     6. Returns the updated Stage 3 data
-    
+
     Note: Must provide either selected_problem_id or custom_problem, but not both
     """
     return await project_service.process_stage_3(
-        db, 
+        db,
         project_id,
         user.id,
         selected_problem_id=selected_problem_id,
-        custom_problem=custom_problem
+        custom_problem=custom_problem,
     )
 
 @router.post("/{project_id}/stages/4/generate")
@@ -247,7 +295,7 @@ async def generate_final_document(
     project_id: str = Path(..., description="Project ID"),
     chosen_solution_id: str = Query(..., description="ID of the solution chosen by the user"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ) -> Dict:
     """
     Stage 4: Update chosen solution and return formatted data.
@@ -274,13 +322,34 @@ async def generate_final_document(
 async def regenerate_idea_image(
     project_id: str = Path(..., description="Project ID"),
     idea_id: str = Path(..., description="Product Idea ID"),
+    feedback: Optional[str] = Body(None, embed=True, description="User feedback on what to change in the visualization"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db),
 ) -> Dict:
     """
     Regenerate the concept image for a specific product idea.
+    Optionally accepts user feedback to customize the regeneration.
     """
-    return await project_service.regenerate_idea_image(db, project_id, idea_id, user.id)
+    return await project_service.regenerate_idea_image(db, project_id, idea_id, user.id, feedback)
+
+@router.post("/{project_id}/ideas/{idea_id}/regenerate", response_model=Dict)
+async def regenerate_idea(
+    project_id: str = Path(..., description="Project ID"),
+    idea_id: str = Path(..., description="Product Idea ID"),
+    feedback: str = Body(..., embed=True, description="User feedback on what to improve in the idea"),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db),
+) -> Dict:
+    """
+    Iterate on a specific product idea using user feedback (professor's Prompt 3).
+
+    Takes user feedback on an existing idea and generates one improved idea that
+    directly addresses the feedback while still solving the original problem.
+    Also regenerates the concept image for the improved idea.
+
+    Returns the updated idea with improved content and a new image URL.
+    """
+    return await project_service.regenerate_idea(db, project_id, idea_id, user.id, feedback)
 
 @router.get("/image-proxy")
 async def image_proxy(image_url: str = Query(..., description="The URL of the image to proxy")):
@@ -294,7 +363,7 @@ async def image_proxy(image_url: str = Query(..., description="The URL of the im
 async def get_project_file(
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Get the original uploaded file (PDF/document) for a project.
@@ -329,7 +398,7 @@ async def get_project_file(
 async def get_project_file_info(
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Get metadata about the original uploaded file for a project.
@@ -354,4 +423,3 @@ async def get_project_file_info(
         "filename": getattr(project, 'original_filename', None),
         "file_id": project.original_file_id
     }
-

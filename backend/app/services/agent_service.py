@@ -1,11 +1,12 @@
 from llama_index.core.tools import QueryEngineTool
-from llama_index.llms.openai import OpenAI
+from llama_index.llms.gemini import Gemini
 from llama_index.core import Settings
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncGenerator
 import json
 import re
+from google import genai
 
-from app.constant.config import OPENAI_API_KEY, OPENAI_MODEL
+from app.constant.config import GEMINI_API_KEY, GEMINI_MODEL
 
 class SimpleAgentWrapper:
     """
@@ -29,6 +30,10 @@ class SimpleAgentWrapper:
                 print(f"🔍 Using document analysis tool: {tool.metadata.name}")
                 tool_result = await tool.acall("What is the content of the document? Provide a comprehensive summary.")
                 
+                print(f"📊 Tool result length: {len(str(tool_result))}")
+                if len(str(tool_result)) < 100:
+                    print(f"⚠️ Tool result preview: {str(tool_result)}")
+                
                 # Return a response object that mimics the expected interface
                 class Response:
                     def __init__(self, response_text):
@@ -39,6 +44,9 @@ class SimpleAgentWrapper:
                 
             except Exception as e:
                 print(f"❌ Tool execution failed: {e}")
+                import traceback
+                traceback.print_exc()
+                
                 # Fallback to direct LLM response
                 llm_response = await self.llm.acomplete(message)
                 class Response:
@@ -57,13 +65,66 @@ class SimpleAgentWrapper:
 
 class AgentService:
     def __init__(self):
-        """Initialize the agent service with OpenAI settings"""
-        self.llm = OpenAI(
-            model=OPENAI_MODEL,
-            api_key=OPENAI_API_KEY
-        )
+        """Initialize the agent service with Gemini settings"""
+        self.gemini_llm = None
+        self.native_client = None
+        if GEMINI_API_KEY:
+            try:
+                self.gemini_llm = Gemini(
+                    model=GEMINI_MODEL,
+                    api_key=GEMINI_API_KEY,
+                    temperature=0.1,
+                    safety_settings=[
+                        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                    ]
+                )
+                self.native_client = genai.Client(api_key=GEMINI_API_KEY)
+            except Exception as e:
+                print(f"⚠️ Warning: Failed to initialize Gemini LLM: {e}")
+
+        if not self.gemini_llm:
+            raise ValueError("GEMINI_API_KEY is required for Gemini models")
+        self.llm = self.gemini_llm
         Settings.llm = self.llm
-    
+        
+    def get_llm(self):
+        """Get the Gemini LLM instance"""
+        return self.gemini_llm
+
+    async def generate_json(self, prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Single direct LLM call that returns JSON. No RAG/agent overhead.
+        Use this instead of run_analysis() when you already have all context.
+        """
+        import asyncio
+
+        formatted = prompt
+        if context:
+            try:
+                formatted = prompt.format(**context)
+            except KeyError as e:
+                print(f"⚠️ Warning: Missing context variable {e} in prompt template")
+
+        # Try primary model with 1 retry, then fallback to flash
+        delays = [5, 10, 15, 20]
+        for attempt, delay in enumerate(delays):
+            try:
+                response = self.native_client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=formatted,
+                )
+                raw = response.text if hasattr(response, 'text') else str(response)
+                return self.extract_json_from_response(raw)
+            except Exception as e:
+                print(f"⚠️ Gemini call failed (attempt {attempt + 1}/{len(delays)}): {e}")
+                if attempt < len(delays) - 1:
+                    print(f"   Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+        raise Exception("Gemini API is temporarily unavailable. Please try again later.")
+
     def extract_json_from_response(self, response_text: str) -> str:
         """
         Extract JSON from LLM response text, handling various formats.
@@ -199,8 +260,9 @@ class AgentService:
     def create_agent(self, tools):
         """Create a simple agent-like interface using tools and LLM"""
         try:
+            llm = self.get_llm()
             # Create a simple agent wrapper that can handle tool calls
-            agent = SimpleAgentWrapper(llm=self.llm, tools=tools)
+            agent = SimpleAgentWrapper(llm=llm, tools=tools)
             return agent
         except Exception as e:
             print(f"❌ Agent creation failed: {e}")
@@ -247,7 +309,7 @@ DOCUMENT CONTENT:
 Please analyze this specific document content and provide your response in the exact JSON format requested above.
 """
             
-            llm_response = await self.llm.acomplete(enhanced_prompt)
+            llm_response = await agent.llm.acomplete(enhanced_prompt)
             raw_response = llm_response.text if hasattr(llm_response, 'text') else str(llm_response)
             
             # Extract and clean JSON from the response
@@ -263,7 +325,7 @@ Please analyze this specific document content and provide your response in the e
                 print(f"Extracted: {response_text[:300]}...")
                 # Return the original response if extraction fails
                 response_text = raw_response
-                
+
         else:
             # Use FunctionCallingAgent for conversational tasks
             response = await agent.achat(formatted_query)
@@ -273,8 +335,67 @@ Please analyze this specific document content and provide your response in the e
                 response_text = response.content
             else:
                 response_text = str(response)
-            
+
         return response_text
 
+    async def run_analysis_stream(
+        self, agent, query: str, context: Optional[Dict[str, Any]] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        formatted_query = query
+        if context:
+            try:
+                formatted_query = query.format(**context)
+            except KeyError as e:
+                print(f"⚠️ Warning: Missing context variable {e} in prompt template")
+
+        yield {"event": "status", "data": {"message": "Reading document content..."}}
+
+        doc_response = await agent.achat("What is the content of the document? Provide a comprehensive summary.")
+        doc_content = doc_response.response if hasattr(doc_response, 'response') else str(doc_response)
+
+        yield {"event": "status", "data": {"message": "Generating analysis..."}}
+
+        problem_domain = context.get("problem_domain", "the given domain") if context else "the given domain"
+        streaming_prompt = f"""
+Based on the following document content, analyze it to understand what it reveals about the {problem_domain} context.
+
+DOCUMENT CONTENT:
+{doc_content}
+
+Provide a focused analysis (150-250 words) that:
+1. Identifies what type of document this is
+2. Explains the context relevant to {problem_domain}
+3. Highlights specific problems or challenges that emerge
+4. Suggests opportunities for innovation
+
+Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, markdown, or bullet points. Just write plain text.
+"""
+
+        full_text = ""
+        try:
+            response = await self.native_model.generate_content_async(
+                streaming_prompt,
+                stream=True,
+            )
+            async for chunk in response:
+                try:
+                    delta = chunk.text
+                    if delta:
+                        full_text += delta
+                        yield {"event": "chunk", "data": {"text": delta}}
+                except (ValueError, AttributeError):
+                    continue
+        except Exception as e:
+            print(f"⚠️ Native streaming failed ({e}), falling back to acomplete")
+            llm_response = await agent.llm.acomplete(streaming_prompt)
+            full_text = llm_response.text if hasattr(llm_response, 'text') else str(llm_response)
+            yield {"event": "chunk", "data": {"text": full_text}}
+
+        cleaned_text = full_text.strip()
+        if cleaned_text.startswith('"') and cleaned_text.endswith('"'):
+            cleaned_text = cleaned_text[1:-1]
+
+        yield {"event": "done", "data": {"analysis": cleaned_text}}
+
 # Create singleton instance
-agent_service = AgentService() 
+agent_service = AgentService()

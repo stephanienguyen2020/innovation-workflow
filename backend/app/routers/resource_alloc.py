@@ -29,21 +29,12 @@ def get_directory_size(directory: str) -> int:
         pass
     return total_size
 
-def get_mongodb_size() -> Dict:
-    """Get MongoDB storage usage for the project"""
+def get_firestore_status() -> Dict:
+    """Get Firestore connection status for the project"""
     try:
-        process = psutil.Process(os.getpid())
-        connections = process.connections()
-        mongo_connection = next((conn for conn in connections if conn.laddr.port == 27017), None)
-        
-        if mongo_connection:
-            return {
-                "status": "connected",
-                "port": mongo_connection.laddr.port,
-                "type": mongo_connection.type,
-                "memory_usage": get_size(process.memory_info().rss)
-            }
-        return {"status": "not_connected"}
+        return {
+            "status": "configured"
+        }
     except Exception:
         return {"status": "error"}
 
@@ -58,8 +49,8 @@ async def get_project_resources() -> Dict:
         project_size = get_directory_size(current_dir)
         backend_size = get_directory_size(os.path.join(current_dir, 'backend'))
         
-        # Get MongoDB related info
-        mongo_info = get_mongodb_size()
+        # Get Firestore related info
+        firestore_info = get_firestore_status()
         
         # Get all Python processes related to this project
         python_processes = []
@@ -89,7 +80,7 @@ async def get_project_resources() -> Dict:
                 "count": len(python_processes),
                 "processes": python_processes
             },
-            "database": mongo_info,
+            "database": firestore_info,
             "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
     except Exception as e:

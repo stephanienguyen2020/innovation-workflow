@@ -11,7 +11,7 @@ class ChatRequest(BaseModel):
 class AgentResponse(BaseModel):
     messages: List[str]
 
-# MongoDB Document Models
+# Document Models
 class MessageBase(BaseModel):
     role: str
     content: str
@@ -19,12 +19,8 @@ class MessageBase(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 class MessageDB(MessageBase):
-    id: str = Field(alias="_id")
+    id: str
     session_id: str
-
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
 
 class MessageCreate(MessageBase):
     pass
@@ -35,12 +31,8 @@ class ConversationBase(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class ConversationDB(ConversationBase):
-    id: str = Field(alias="_id")
+    id: str
     message_ids: List[str] = Field(default_factory=list)
-
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
 
 # Client-Facing Models
 class MessageConversation(BaseModel):

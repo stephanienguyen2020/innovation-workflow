@@ -3,22 +3,22 @@ File Service - Handles storing and retrieving original uploaded files (PDFs, doc
 """
 import base64
 from typing import Optional, Dict
-from motor.motor_asyncio import AsyncIOMotorDatabase
-from bson import ObjectId
 from datetime import datetime
 import logging
+from google.cloud.firestore_v1.async_client import AsyncClient
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logger = logging.getLogger(__name__)
 
 
 class FileService:
-    """Service for managing uploaded files in MongoDB."""
+    """Service for managing uploaded files in Firestore."""
     
     def __init__(self):
-        self.db: Optional[AsyncIOMotorDatabase] = None
+        self.db: Optional[AsyncClient] = None
         self.collection_name = "uploaded_files"
     
-    def set_db(self, db: AsyncIOMotorDatabase):
+    def set_db(self, db: AsyncClient):
         """Set the database connection."""
         self.db = db
     
@@ -46,7 +46,7 @@ class FileService:
         if self.db is None:
             raise ValueError("Database connection not initialized")
         
-        collection = self.db[self.collection_name]
+        collection = self.db.collection(self.collection_name)
         
         # Encode the file data as base64 for storage
         encoded_data = base64.b64encode(file_data).decode('utf-8')
@@ -61,8 +61,9 @@ class FileService:
             "file_size": len(file_data)
         }
         
-        result = await collection.insert_one(document)
-        file_id = str(result.inserted_id)
+        doc_ref = collection.document()
+        await doc_ref.set(document)
+        file_id = doc_ref.id
         
         logger.info(f"Stored file '{filename}' with ID: {file_id}")
         return file_id
@@ -81,21 +82,21 @@ class FileService:
             return None
         
         try:
-            collection = self.db[self.collection_name]
-            doc = await collection.find_one({"_id": ObjectId(file_id)})
-            
-            if not doc:
+            collection = self.db.collection(self.collection_name)
+            doc_ref = collection.document(file_id)
+            doc = await doc_ref.get()
+            if not doc.exists:
                 return None
-            
+            data = doc.to_dict()
             # Decode the base64 data back to bytes
-            file_bytes = base64.b64decode(doc["file_data"])
+            file_bytes = base64.b64decode(data["file_data"])
             
             return {
                 "file_data": file_bytes,
-                "filename": doc["filename"],
-                "content_type": doc["content_type"],
-                "file_size": doc.get("file_size", len(file_bytes)),
-                "uploaded_at": doc.get("uploaded_at")
+                "filename": data["filename"],
+                "content_type": data["content_type"],
+                "file_size": data.get("file_size", len(file_bytes)),
+                "uploaded_at": data.get("uploaded_at")
             }
         except Exception as e:
             logger.error(f"Error retrieving file {file_id}: {str(e)}")
@@ -115,9 +116,13 @@ class FileService:
             return False
         
         try:
-            collection = self.db[self.collection_name]
-            result = await collection.delete_one({"_id": ObjectId(file_id)})
-            return result.deleted_count > 0
+            collection = self.db.collection(self.collection_name)
+            doc_ref = collection.document(file_id)
+            doc = await doc_ref.get()
+            if not doc.exists:
+                return False
+            await doc_ref.delete()
+            return True
         except Exception as e:
             logger.error(f"Error deleting file {file_id}: {str(e)}")
             return False
@@ -136,22 +141,21 @@ class FileService:
             return None
         
         try:
-            collection = self.db[self.collection_name]
-            doc = await collection.find_one({"project_id": project_id})
-            
-            if not doc:
+            collection = self.db.collection(self.collection_name)
+            docs = await collection.where(filter=FieldFilter("project_id", "==", project_id)).limit(1).get()
+            if not docs:
                 return None
-            
+            data = docs[0].to_dict()
             # Decode the base64 data back to bytes
-            file_bytes = base64.b64decode(doc["file_data"])
+            file_bytes = base64.b64decode(data["file_data"])
             
             return {
-                "file_id": str(doc["_id"]),
+                "file_id": docs[0].id,
                 "file_data": file_bytes,
-                "filename": doc["filename"],
-                "content_type": doc["content_type"],
-                "file_size": doc.get("file_size", len(file_bytes)),
-                "uploaded_at": doc.get("uploaded_at")
+                "filename": data["filename"],
+                "content_type": data["content_type"],
+                "file_size": data.get("file_size", len(file_bytes)),
+                "uploaded_at": data.get("uploaded_at")
             }
         except Exception as e:
             logger.error(f"Error retrieving file for project {project_id}: {str(e)}")

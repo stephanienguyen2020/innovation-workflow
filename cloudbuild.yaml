@@ -1,0 +1,153 @@
+# ============================================================
+# Cloud Build CI/CD - Innovation Workflow
+# ============================================================
+# Builds and deploys both backend and frontend to Cloud Run.
+#
+# Trigger this manually:
+#   gcloud builds submit --config=cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1,_FIRESTORE_DATABASE=your-db-name
+#
+# Or set up a Cloud Build trigger for automatic deploys on push.
+# ============================================================
+
+steps:
+  # ---- Backend ----
+
+  # 1. Build backend Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_BACKEND_SERVICE}'
+      - './backend'
+    id: 'build-backend'
+
+  # 2. Push backend image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_BACKEND_SERVICE}'
+    id: 'push-backend'
+    waitFor: ['build-backend']
+
+  # 3. Deploy backend to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_BACKEND_SERVICE}'
+      - '--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_BACKEND_SERVICE}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--timeout=300'
+      - '--min-instances=0'
+      - '--max-instances=5'
+      - '--port=8000'
+      - '--set-env-vars=ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,FIRESTORE_DATABASE=${_FIRESTORE_DATABASE}'
+      - '--set-secrets=GEMINI_API_KEY=gemini-api-key:latest,JWT_SECRET=jwt-secret:latest,SECRET_KEY=secret-key:latest,ADMIN_EMAIL=admin-email:latest,ADMIN_PASSWORD=admin-password:latest'
+    id: 'deploy-backend'
+    waitFor: ['push-backend']
+
+  # 4. Get backend URL for frontend build
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        BACKEND_URL=$$(gcloud run services describe ${_BACKEND_SERVICE} \
+          --region=${_REGION} --format='value(status.url)')
+        echo "$$BACKEND_URL" > /workspace/backend_url.txt
+        echo "Backend URL: $$BACKEND_URL"
+    id: 'get-backend-url'
+    waitFor: ['deploy-backend']
+
+  # ---- Frontend ----
+
+  # 5. Build frontend Docker image with backend URL
+  # Uses docker builder (has both docker + bash) to inject the dynamic BACKEND_URL build arg
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        BACKEND_URL=$$(cat /workspace/backend_url.txt)
+        docker build \
+          --build-arg "NEXT_PUBLIC_BACKEND_URL=$$BACKEND_URL" \
+          -t "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_FRONTEND_SERVICE}" \
+          ./frontend
+    id: 'build-frontend'
+    waitFor: ['get-backend-url']
+
+  # 6. Push frontend image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_FRONTEND_SERVICE}'
+    id: 'push-frontend'
+    waitFor: ['build-frontend']
+
+  # 7. Deploy frontend to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        BACKEND_URL=$$(cat /workspace/backend_url.txt)
+        gcloud run deploy ${_FRONTEND_SERVICE} \
+          --image="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_FRONTEND_SERVICE}" \
+          --region=${_REGION} \
+          --platform=managed \
+          --allow-unauthenticated \
+          --memory=512Mi \
+          --cpu=1 \
+          --timeout=60 \
+          --min-instances=0 \
+          --max-instances=5 \
+          --port=3000 \
+          --set-env-vars="NEXT_PUBLIC_BACKEND_URL=$$BACKEND_URL"
+    id: 'deploy-frontend'
+    waitFor: ['push-frontend']
+
+  # 8. Update backend CORS to include frontend Cloud Run URL alongside custom domains
+  # Uses --flags-file with YAML to safely pass comma-containing ALLOWED_ORIGINS value
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        FRONTEND_URL=$$(gcloud run services describe ${_FRONTEND_SERVICE} \
+          --region=${_REGION} --format='value(status.url)')
+        echo "Frontend URL: $$FRONTEND_URL"
+        ALLOWED="$$FRONTEND_URL,${_ALLOWED_ORIGINS}"
+        echo "Setting ALLOWED_ORIGINS to: $$ALLOWED"
+        cat > /workspace/cors-flags.yaml << EOF
+        --update-env-vars:
+          ALLOWED_ORIGINS: "$$ALLOWED"
+        EOF
+        gcloud run services update ${_BACKEND_SERVICE} \
+          --region=${_REGION} \
+          --flags-file=/workspace/cors-flags.yaml
+    id: 'update-cors'
+    waitFor: ['deploy-frontend']
+
+substitutions:
+  _REGION: 'us-central1'
+  _AR_REPO: 'innovation-workflow'
+  _BACKEND_SERVICE: 'innovation-backend'
+  _FRONTEND_SERVICE: 'innovation-frontend'
+  _FIRESTORE_DATABASE: '(default)'
+  _ALLOWED_ORIGINS: 'https://innovationworkflow.com,https://www.innovationworkflow.com'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+timeout: '1800s'
+
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_BACKEND_SERVICE}'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_FRONTEND_SERVICE}'

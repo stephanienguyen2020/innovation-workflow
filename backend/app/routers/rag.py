@@ -6,7 +6,7 @@ import tempfile
 import os
 import shutil
 
-from app.schema.rag import DoclingIngestRequest, DocumentListResponse, IngestResponse, QueryRequest, QueryResponse, TextIngestRequest
+from app.schema.rag import DocumentListResponse, IngestResponse, QueryRequest, QueryResponse, TextIngestRequest
 from app.services.rag_service import rag_service
 
 router = APIRouter(tags=["rag"], prefix="/rag")
@@ -60,24 +60,6 @@ async def ingest_files(
         # Clean up temp directory in case of error
         shutil.rmtree(temp_dir)
         raise HTTPException(status_code=500, detail=f"Failed to ingest files: {str(e)}")
-
-@router.post("/ingest/docling", response_model=IngestResponse)
-async def ingest_docling(request: DoclingIngestRequest):
-    """
-    Ingest documents from Docling.
-    """
-    try:
-        doc_count = await rag_service.ingest_documents_from_docling(
-            request.project_id,
-            request.api_key
-        )
-        return {
-            "success": True,
-            "message": f"Ingested {doc_count} documents from Docling",
-            "document_count": doc_count
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to ingest from Docling: {str(e)}")
 
 @router.post("/query", response_model=QueryResponse)
 async def query_rag(request: QueryRequest):

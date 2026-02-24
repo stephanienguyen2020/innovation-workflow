@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect, Suspense } from "react";
 import { ChevronDown, Rocket, Loader2, ArrowLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useModel } from "@/context/ModelContext";
 
 interface ProblemStatement {
   id: string;
@@ -16,7 +17,10 @@ interface ProblemStatement {
 function ProblemDefinitionContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const projectId = searchParams.get("projectId");
+  const projectIdFromUrl = searchParams.get("projectId");
+  const projectId = projectIdFromUrl || (typeof window !== "undefined" ? localStorage.getItem("currentProjectId") : null);
+
+  const { model } = useModel();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +62,7 @@ function ProblemDefinitionContent() {
   useEffect(() => {
     if (!projectId) {
       setError("No project ID provided. Please go back and select a project.");
+      router.push("/workflow");
       return;
     }
 
@@ -174,7 +179,7 @@ function ProblemDefinitionContent() {
 
     // Fetch problem statements when the component mounts
     fetchProblemStatements();
-  }, [projectId]);
+  }, [projectId, model]);
 
   const handleProblemSelect = (id: string) => {
     setSelectedProblem(id);
@@ -254,6 +259,7 @@ function ProblemDefinitionContent() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Model-Type": model,
         },
       });
 

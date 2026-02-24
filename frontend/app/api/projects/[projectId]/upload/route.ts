@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function POST(
   request: NextRequest,
@@ -44,7 +44,7 @@ export async function POST(
     const backendFormData = new FormData();
     backendFormData.append("file", file);
 
-    const apiUrl = `${API_URL}/projects/${projectId}/stages/1/upload`;
+    const apiUrl = `${API_URL}/api/projects/${projectId}/stages/1/upload`;
     console.log(
       `Uploading file ${file.name} to project ${projectId} at ${apiUrl}`
     );

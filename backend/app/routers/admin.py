@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from google.cloud.firestore_v1.async_client import AsyncClient
 from typing import List
 from pydantic import BaseModel
 
@@ -42,7 +42,7 @@ def require_admin(user: UserProfile = Depends(get_current_user)) -> UserProfile:
 @router.get("/allowed-emails", response_model=AllowedEmailsResponse)
 async def get_allowed_emails(
     admin: UserProfile = Depends(require_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Get all allowed usernames and domains.
@@ -58,7 +58,7 @@ async def get_allowed_emails(
 @router.get("/allowed-emails/usernames", response_model=List[str])
 async def get_allowed_usernames(
     admin: UserProfile = Depends(require_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Get list of allowed usernames.
@@ -71,7 +71,7 @@ async def get_allowed_usernames(
 async def add_username(
     request: UsernameRequest,
     admin: UserProfile = Depends(require_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Add a username to the allowed list.
@@ -98,7 +98,7 @@ async def add_username(
 async def remove_username(
     username: str,
     admin: UserProfile = Depends(require_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Remove a username from the allowed list.
@@ -117,7 +117,7 @@ async def remove_username(
 @router.get("/allowed-emails/domains", response_model=List[str])
 async def get_allowed_domains(
     admin: UserProfile = Depends(require_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Get list of allowed domains.
@@ -130,7 +130,7 @@ async def get_allowed_domains(
 async def add_domain(
     request: DomainRequest,
     admin: UserProfile = Depends(require_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Add a domain to the allowed list.
@@ -157,7 +157,7 @@ async def add_domain(
 async def remove_domain(
     domain: str,
     admin: UserProfile = Depends(require_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db)
+    db: AsyncClient = Depends(get_db)
 ):
     """
     Remove a domain from the allowed list.
@@ -171,4 +171,3 @@ async def remove_domain(
         )
     
     return {"message": f"Domain '{domain}' removed successfully", "domain": domain}
-
