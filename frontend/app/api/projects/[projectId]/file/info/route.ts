@@ -5,10 +5,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function GET(
   request: Request,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const { projectId } = params;
-  const cookieStore = cookies();
+  const { projectId } = await params;
+  const cookieStore = await cookies();
   const token = cookieStore.get("access_token")?.value;
 
   if (!token) {

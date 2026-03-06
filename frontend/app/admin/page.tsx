@@ -1,13 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 interface AllowedEmailsData {
   allowed_usernames: string[];
   allowed_domains: string[];
+}
+
+interface BulkResult {
+  message: string;
+  added: string[];
+  skipped: string[];
+  domains_added: string[];
+  total_processed: number;
 }
 
 export default function AdminPage() {
@@ -22,24 +29,28 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  // Form states
+  // Single username form
   const [newUsername, setNewUsername] = useState("");
-  const [newDomain, setNewDomain] = useState("");
   const [addingUsername, setAddingUsername] = useState(false);
-  const [addingDomain, setAddingDomain] = useState(false);
 
-  // Search/filter states
+  // Search
   const [usernameSearch, setUsernameSearch] = useState("");
-  const [domainSearch, setDomainSearch] = useState("");
 
-  // Check if user is admin
+  // Inline delete confirmation
+  const [confirmingUsername, setConfirmingUsername] = useState<string | null>(null);
+
+  // Bulk upload
+  const [parsedEmails, setParsedEmails] = useState<string[]>([]);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!authLoading && (!user || user.role !== "admin")) {
       router.push("/");
     }
   }, [user, authLoading, router]);
 
-  // Fetch data
   useEffect(() => {
     if (user?.role === "admin") {
       fetchData();
@@ -65,7 +76,7 @@ export default function AdminPage() {
 
   const showSuccess = (message: string) => {
     setSuccessMessage(message);
-    setTimeout(() => setSuccessMessage(""), 3000);
+    setTimeout(() => setSuccessMessage(""), 5000);
   };
 
   const handleAddUsername = async (e: React.FormEvent) => {
@@ -84,12 +95,13 @@ export default function AdminPage() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to add username");
+        throw new Error(errorData.detail || "Failed to add");
       }
 
+      const result = await response.json();
       setNewUsername("");
       await fetchData();
-      showSuccess(`Username "${newUsername}" added successfully`);
+      showSuccess(result.message || `"${newUsername}" added successfully`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add username");
     } finally {
@@ -98,8 +110,7 @@ export default function AdminPage() {
   };
 
   const handleRemoveUsername = async (username: string) => {
-    if (!confirm(`Are you sure you want to remove "${username}"?`)) return;
-
+    setConfirmingUsername(null);
     setError("");
 
     try {
@@ -122,64 +133,110 @@ export default function AdminPage() {
     }
   };
 
-  const handleAddDomain = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDomain.trim()) return;
+  const parseCSVText = (text: string): string[] => {
+    const emails: string[] = [];
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      const parts = line.split(/[,;\t]/);
+      for (const part of parts) {
+        const val = part.trim().replace(/^["']|["']$/g, "");
+        if (val.includes("@")) {
+          emails.push(val.toLowerCase());
+        }
+      }
+    }
+    return [...new Set(emails)];
+  };
 
-    setAddingDomain(true);
+  const parseExcelFile = async (file: File): Promise<string[]> => {
+    const XLSX = await import("xlsx");
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<(string | number)[]>(sheet, {
+      header: 1,
+    });
+    const emails: string[] = [];
+    for (const row of rows) {
+      for (const cell of row) {
+        const val = String(cell || "").trim();
+        if (val.includes("@")) {
+          emails.push(val.toLowerCase());
+        }
+      }
+    }
+    return [...new Set(emails)];
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBulkResult(null);
     setError("");
 
     try {
-      const response = await fetch("/api/admin/allowed-emails/domains", {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      let emails: string[] = [];
+
+      if (ext === "csv" || ext === "txt") {
+        const text = await file.text();
+        emails = parseCSVText(text);
+      } else if (ext === "xlsx" || ext === "xls") {
+        emails = await parseExcelFile(file);
+      } else {
+        throw new Error(
+          "Unsupported file type. Please use .csv, .xlsx, .xls, or .txt"
+        );
+      }
+
+      if (emails.length === 0) {
+        throw new Error("No valid email addresses found in the file");
+      }
+
+      setParsedEmails(emails);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to parse file");
+      setParsedEmails([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleBulkUpload = async () => {
+    if (parsedEmails.length === 0) return;
+
+    setBulkUploading(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/admin/allowed-emails/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain: newDomain.trim().toLowerCase() }),
+        body: JSON.stringify({ emails: parsedEmails }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to add domain");
+        throw new Error(errorData.detail || "Failed to bulk upload");
       }
 
-      setNewDomain("");
+      const result = await response.json();
+      setBulkResult(result);
+      setParsedEmails([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       await fetchData();
-      showSuccess(`Domain "${newDomain}" added successfully`);
+      showSuccess(result.message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add domain");
-    } finally {
-      setAddingDomain(false);
-    }
-  };
-
-  const handleRemoveDomain = async (domain: string) => {
-    if (!confirm(`Are you sure you want to remove "${domain}"?`)) return;
-
-    setError("");
-
-    try {
-      const response = await fetch(
-        `/api/admin/allowed-emails/domains/${encodeURIComponent(domain)}`,
-        { method: "DELETE" }
+      setError(
+        err instanceof Error ? err.message : "Failed to bulk upload emails"
       );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to remove domain");
-      }
-
-      await fetchData();
-      showSuccess(`Domain "${domain}" removed successfully`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove domain");
+    } finally {
+      setBulkUploading(false);
     }
   };
 
-  // Filter usernames and domains based on search
   const filteredUsernames = data.allowed_usernames.filter((u) =>
     u.toLowerCase().includes(usernameSearch.toLowerCase())
-  );
-  const filteredDomains = data.allowed_domains.filter((d) =>
-    d.toLowerCase().includes(domainSearch.toLowerCase())
   );
 
   if (authLoading || loading) {
@@ -191,7 +248,7 @@ export default function AdminPage() {
   }
 
   if (!user || user.role !== "admin") {
-    return null; // Will redirect
+    return null;
   }
 
   return (
@@ -231,7 +288,7 @@ export default function AdminPage() {
                   type="text"
                   value={newUsername}
                   onChange={(e) => setNewUsername(e.target.value)}
-                  placeholder="Enter username (e.g., abc1234)"
+                  placeholder="e.g., abc1234 or abc1234@columbia.edu"
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <button
@@ -266,19 +323,44 @@ export default function AdminPage() {
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {filteredUsernames.map((username) => (
-                    <li
-                      key={username}
-                      className="flex items-center justify-between px-4 py-3 hover:bg-gray-50"
-                    >
-                      <span className="text-sm font-mono text-gray-700">
-                        {username}
-                      </span>
-                      <button
-                        onClick={() => handleRemoveUsername(username)}
-                        className="text-red-500 hover:text-red-700 text-sm font-medium"
-                      >
-                        Remove
-                      </button>
+                    <li key={username} className="px-4 py-3 hover:bg-gray-50">
+                      {confirmingUsername === username ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-gray-600">
+                            Remove{" "}
+                            <span className="font-mono font-medium text-gray-800">
+                              {username}
+                            </span>
+                            ?
+                          </span>
+                          <div className="flex gap-2 shrink-0">
+                            <button
+                              onClick={() => setConfirmingUsername(null)}
+                              className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleRemoveUsername(username)}
+                              className="px-3 py-1 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded-md"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-mono text-gray-700">
+                            {username}
+                          </span>
+                          <button
+                            onClick={() => setConfirmingUsername(username)}
+                            className="text-red-500 hover:text-red-700 text-sm font-medium"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -286,78 +368,87 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Allowed Domains Section */}
+          {/* Bulk Upload Section */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
-                Allowed Domains
+                Bulk Upload
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-                {data.allowed_domains.length} domains registered
+                Upload a file containing a list of email addresses
               </p>
             </div>
 
-            {/* Add Domain Form */}
-            <form
-              onSubmit={handleAddDomain}
-              className="p-4 border-b border-gray-100 bg-gray-50"
-            >
-              <div className="flex gap-2">
+            <div className="p-6 space-y-4">
+              {/* File Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select file
+                </label>
                 <input
-                  type="text"
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                  placeholder="Enter domain (e.g., example.edu)"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls,.txt"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
                 />
-                <button
-                  type="submit"
-                  disabled={addingDomain || !newDomain.trim()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {addingDomain ? "Adding..." : "Add"}
-                </button>
+                <p className="text-xs text-gray-400 mt-1">
+                  Supported: .csv, .xlsx, .xls, .txt — emails parsed from any
+                  column
+                </p>
               </div>
-            </form>
 
-            {/* Search */}
-            <div className="p-4 border-b border-gray-100">
-              <input
-                type="text"
-                value={domainSearch}
-                onChange={(e) => setDomainSearch(e.target.value)}
-                placeholder="Search domains..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Domain List */}
-            <div className="max-h-96 overflow-y-auto">
-              {filteredDomains.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  {domainSearch
-                    ? "No domains match your search"
-                    : "No domains added yet"}
+              {/* Preview */}
+              {parsedEmails.length > 0 && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm font-medium text-blue-800 mb-2">
+                    Found {parsedEmails.length} email
+                    {parsedEmails.length !== 1 ? "s" : ""}
+                  </p>
+                  <div className="max-h-40 overflow-y-auto mb-3">
+                    <ul className="text-xs text-blue-700 space-y-0.5 font-mono">
+                      {parsedEmails.slice(0, 15).map((email) => (
+                        <li key={email}>{email}</li>
+                      ))}
+                      {parsedEmails.length > 15 && (
+                        <li className="text-blue-500 italic">
+                          ...and {parsedEmails.length - 15} more
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                  <button
+                    onClick={handleBulkUpload}
+                    disabled={bulkUploading}
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {bulkUploading
+                      ? "Uploading..."
+                      : `Add ${parsedEmails.length} emails to whitelist`}
+                  </button>
                 </div>
-              ) : (
-                <ul className="divide-y divide-gray-100">
-                  {filteredDomains.map((domain) => (
-                    <li
-                      key={domain}
-                      className="flex items-center justify-between px-4 py-3 hover:bg-gray-50"
-                    >
-                      <span className="text-sm font-mono text-gray-700">
-                        {domain}
-                      </span>
-                      <button
-                        onClick={() => handleRemoveDomain(domain)}
-                        className="text-red-500 hover:text-red-700 text-sm font-medium"
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+              )}
+
+              {/* Results */}
+              {bulkResult && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg space-y-1">
+                  <p className="text-sm font-semibold text-green-800">
+                    {bulkResult.message}
+                  </p>
+                  {bulkResult.added.length > 0 && (
+                    <p className="text-xs text-green-700">
+                      Added: {bulkResult.added.length} username
+                      {bulkResult.added.length !== 1 ? "s" : ""}
+                      {bulkResult.domains_added.length > 0 &&
+                        ` + ${bulkResult.domains_added.length} domain${bulkResult.domains_added.length !== 1 ? "s" : ""}`}
+                    </p>
+                  )}
+                  {bulkResult.skipped.length > 0 && (
+                    <p className="text-xs text-yellow-700">
+                      Skipped (already existed): {bulkResult.skipped.length}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </div>

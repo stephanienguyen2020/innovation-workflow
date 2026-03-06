@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Path, Query, Body, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Path, Query, Body, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from google.cloud.firestore_v1.async_client import AsyncClient
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -220,14 +220,15 @@ async def analyze_document(
 
 @router.post("/{project_id}/stages/1/generate/stream")
 async def analyze_document_stream(
+    request: Request,
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
     db: AsyncClient = Depends(get_db),
 ):
-    print(f"DEBUG ROUTER: Stream endpoint hit for project {project_id}, user {user.id}")
+    model_id = request.headers.get("X-Model-Type")
 
     async def event_generator():
-        async for event in project_service.analyze_document_stream(db, project_id, user.id):
+        async for event in project_service.analyze_document_stream(db, project_id, user.id, model_id=model_id):
             event_type = event["event"]
             event_data = json.dumps(event["data"])
             yield f"event: {event_type}\ndata: {event_data}\n\n"
@@ -244,6 +245,7 @@ async def analyze_document_stream(
 
 @router.post("/{project_id}/stages/2/generate", response_model=Stage)
 async def generate_problem_statements(
+    request: Request,
     project_id: str = Path(..., description="Project ID"),
     user: UserProfile = Depends(get_current_user),
     db: AsyncClient = Depends(get_db),
@@ -259,10 +261,12 @@ async def generate_problem_statements(
     5. Updates the project with the problem statements
     6. Returns the updated Stage 2 data
     """
-    return await project_service.process_stage_2(db, project_id, user.id)
+    model_id = request.headers.get("X-Model-Type")
+    return await project_service.process_stage_2(db, project_id, user.id, model_id=model_id)
 
 @router.post("/{project_id}/stages/3/generate", response_model=Stage)
 async def generate_product_ideas(
+    request: Request,
     project_id: str = Path(..., description="Project ID"),
     selected_problem_id: Optional[str] = Query(None, description="ID of the selected problem from stage 2"),
     custom_problem: Optional[str] = Query(None, description="Custom problem statement text"),
@@ -282,12 +286,14 @@ async def generate_product_ideas(
 
     Note: Must provide either selected_problem_id or custom_problem, but not both
     """
+    model_id = request.headers.get("X-Model-Type")
     return await project_service.process_stage_3(
         db,
         project_id,
         user.id,
         selected_problem_id=selected_problem_id,
         custom_problem=custom_problem,
+        model_id=model_id,
     )
 
 @router.post("/{project_id}/stages/4/generate")
@@ -334,6 +340,7 @@ async def regenerate_idea_image(
 
 @router.post("/{project_id}/ideas/{idea_id}/regenerate", response_model=Dict)
 async def regenerate_idea(
+    request: Request,
     project_id: str = Path(..., description="Project ID"),
     idea_id: str = Path(..., description="Product Idea ID"),
     feedback: str = Body(..., embed=True, description="User feedback on what to improve in the idea"),
@@ -349,7 +356,8 @@ async def regenerate_idea(
 
     Returns the updated idea with improved content and a new image URL.
     """
-    return await project_service.regenerate_idea(db, project_id, idea_id, user.id, feedback)
+    model_id = request.headers.get("X-Model-Type")
+    return await project_service.regenerate_idea(db, project_id, idea_id, user.id, feedback, model_id=model_id)
 
 @router.get("/image-proxy")
 async def image_proxy(image_url: str = Query(..., description="The URL of the image to proxy")):

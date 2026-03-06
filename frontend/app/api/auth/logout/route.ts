@@ -8,7 +8,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 export async function POST(request: NextRequest) {
   try {
     // Get the access token from cookies
-    const accessToken = cookies().get("access_token")?.value;
+    const accessToken = (await cookies()).get("access_token")?.value;
 
     // The correct API endpoint URL based on the router definition in main.py
     const logoutUrl = `${API_URL}/logout`;

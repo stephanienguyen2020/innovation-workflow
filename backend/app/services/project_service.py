@@ -280,7 +280,7 @@ class ProjectService:
 
     @staticmethod
     async def analyze_document_stream(
-        db: AsyncClient, project_id: str, user_id: str
+        db: AsyncClient, project_id: str, user_id: str, model_id: str = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         project = await db_get_project(db, project_id, user_id)
         if not project:
@@ -303,7 +303,6 @@ class ProjectService:
                 return
 
             yield {"event": "status", "data": {"message": "Generating analysis..."}}
-            print(f"DEBUG STREAM: Calling Gemini for analysis...")
 
             problem_domain = project.problem_domain
             streaming_prompt = f"""Based on the following document content, analyze it to understand what it reveals about the {problem_domain} context.
@@ -319,57 +318,28 @@ Provide a focused analysis (150-250 words) that:
 
 Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, markdown, or bullet points. Just write plain text."""
 
-            # Use google-genai SDK for streaming
-            from app.constant.config import GEMINI_MODEL
-
             full_text = ""
             try:
-                client = agent_service.native_client
-                print(f"DEBUG STREAM: Using model: {GEMINI_MODEL}, prompt length: {len(streaming_prompt)} chars")
-
-                response = client.models.generate_content_stream(
-                    model=GEMINI_MODEL,
-                    contents=streaming_prompt,
-                )
-                print(f"DEBUG STREAM: Got response iterator, reading chunks...")
-                for chunk in response:
-                    delta = chunk.text
-                    if delta:
-                        full_text += delta
-                        print(f"DEBUG STREAM: Chunk received, length={len(delta)}")
-                        yield {"event": "chunk", "data": {"text": delta}}
-                print(f"DEBUG STREAM: Streaming complete, total length={len(full_text)}")
+                async for chunk_text in agent_service.generate_text_stream(streaming_prompt, model_id=model_id):
+                    full_text += chunk_text
+                    yield {"event": "chunk", "data": {"text": chunk_text}}
             except Exception as e:
-                print(f"DEBUG STREAM: Gemini streaming failed: {type(e).__name__}: {e}")
+                print(f"Streaming failed: {type(e).__name__}: {e}")
                 import asyncio
-                # Retry once with same model
-                print(f"DEBUG STREAM: Retry attempt 1, waiting 3s...")
                 await asyncio.sleep(3)
                 try:
+                    # Retry with non-streaming fallback
+                    from app.constant.config import GEMINI_MODEL
                     response = agent_service.native_client.models.generate_content(
                         model=GEMINI_MODEL,
                         contents=streaming_prompt,
                     )
                     full_text = response.text
-                    print(f"DEBUG STREAM: Retry succeeded, length={len(full_text)}")
                     yield {"event": "chunk", "data": {"text": full_text}}
-                except Exception as retry_err:
-                    print(f"DEBUG STREAM: Retry failed: {retry_err}")
-                    # Fall back to flash model
-                    try:
-                        fallback_model = "gemini-3-flash-preview"
-                        print(f"DEBUG STREAM: Trying fallback model: {fallback_model}")
-                        response = agent_service.native_client.models.generate_content(
-                            model=fallback_model,
-                            contents=streaming_prompt,
-                        )
-                        full_text = response.text
-                        print(f"DEBUG STREAM: Fallback succeeded, length={len(full_text)}")
-                        yield {"event": "chunk", "data": {"text": full_text}}
-                    except Exception as fallback_err:
-                        print(f"DEBUG STREAM: Fallback also failed: {fallback_err}")
-                        yield {"event": "error", "data": {"message": "Gemini API is temporarily unavailable. Please try again in a moment."}}
-                        return
+                except Exception as fallback_err:
+                    print(f"Fallback also failed: {fallback_err}")
+                    yield {"event": "error", "data": {"message": "AI service is temporarily unavailable. Please try again in a moment."}}
+                    return
 
             cleaned_text = full_text.strip()
             if cleaned_text.startswith('"') and cleaned_text.endswith('"'):
@@ -385,7 +355,7 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
             yield {"event": "error", "data": {"message": f"Error analyzing document: {str(e)}"}}
 
     @staticmethod
-    async def process_stage_2(db: AsyncClient, project_id: str, user_id: str) -> Stage:
+    async def process_stage_2(db: AsyncClient, project_id: str, user_id: str, model_id: str = None) -> Stage:
         """
         Process stage 2: Generate problem statements based on analysis.
         """
@@ -414,7 +384,8 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
             context={
                 "analysis": analysis,
                 "problem_domain": project.problem_domain
-            }
+            },
+            model_id=model_id,
         )
 
         try:
@@ -468,11 +439,12 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
 
     @staticmethod
     async def process_stage_3(
-        db: AsyncClient, 
+        db: AsyncClient,
         project_id: str,
         user_id: str,
         selected_problem_id: Optional[str] = None,
         custom_problem: Optional[str] = None,
+        model_id: str = None,
     ) -> Stage:
         """
         Process stage 3: Generate product ideas based on a single selected or custom problem statement.
@@ -573,7 +545,8 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
                 "analysis": analysis,
                 "problem_statements": [selected_problem],
                 "problem_domain": project.problem_domain
-            }
+            },
+            model_id=model_id,
         )
 
         try:
@@ -853,6 +826,7 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
         idea_id: str,
         user_id: str,
         feedback: str,
+        model_id: str = None,
     ) -> Dict:
         """
         Regenerate (iterate on) a specific product idea using user feedback.
@@ -911,7 +885,8 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
                 "problem_statements": selected_problem,
                 "original_idea": f"{target_idea['idea']}\n\n{target_idea['detailed_explanation']}",
                 "feedback": feedback,
-            }
+            },
+            model_id=model_id,
         )
 
         try:

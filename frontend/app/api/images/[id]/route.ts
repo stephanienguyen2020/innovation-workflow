@@ -18,7 +18,7 @@ export async function GET(
 
   try {
     // Get auth token from cookies
-    const accessToken = cookies().get("access_token")?.value;
+    const accessToken = (await cookies()).get("access_token")?.value;
 
     const headers: HeadersInit = {};
     if (accessToken) {

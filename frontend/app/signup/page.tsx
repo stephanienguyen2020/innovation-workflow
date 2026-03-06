@@ -71,7 +71,6 @@ function SignupContent() {
           "/login?message=Account created successfully! Please log in.";
       }
     } catch (err) {
-      console.error("Signup error:", err);
       setError(err instanceof Error ? err.message : "Error creating account");
     }
   };

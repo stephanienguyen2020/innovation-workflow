@@ -79,12 +79,16 @@ class DBAuth:
     async def verify_email_code(self, email: str, verification_code: str) -> bool:
         """Verify email verification code and mark email as verified"""
         async def _verify():
-            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).where(
-                filter=FieldFilter("email_verification_code", "==", verification_code)
-            ).where(
-                filter=FieldFilter("email_verification_expires", ">", datetime.now(timezone.utc))
-            ).limit(1).get()
+            # Query by email only to avoid requiring a composite index,
+            # then validate the code and expiry in Python
+            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).limit(1).get()
             if not docs:
+                return False
+            data = docs[0].to_dict()
+            if data.get("email_verification_code") != verification_code:
+                return False
+            expires = data.get("email_verification_expires")
+            if not expires or expires < datetime.now(timezone.utc):
                 return False
             doc_ref = self.collection.document(docs[0].id)
             await doc_ref.update({
@@ -100,12 +104,16 @@ class DBAuth:
     async def find_user_by_verification_code(self, email: str, verification_code: str) -> Optional[Dict]:
         """Find user by email and verification code (for validation)"""
         async def _find():
-            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).where(
-                filter=FieldFilter("email_verification_code", "==", verification_code)
-            ).where(
-                filter=FieldFilter("email_verification_expires", ">", datetime.now(timezone.utc))
-            ).limit(1).get()
+            # Query by email only to avoid requiring a composite index,
+            # then validate the code and expiry in Python
+            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).limit(1).get()
             if not docs:
+                return None
+            data = docs[0].to_dict()
+            if data.get("email_verification_code") != verification_code:
+                return None
+            expires = data.get("email_verification_expires")
+            if not expires or expires < datetime.now(timezone.utc):
                 return None
             return self._doc_to_dict(docs[0])
 
@@ -119,11 +127,51 @@ class DBAuth:
     async def find_unverified_user_by_email(self, email: str) -> Optional[Dict]:
         """Find unverified user by email"""
         async def _find():
-            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).where(
-                filter=FieldFilter("is_email_verified", "==", False)
-            ).limit(1).get()
+            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).limit(1).get()
             if not docs:
+                return None
+            data = docs[0].to_dict()
+            if data.get("is_email_verified", False):
                 return None
             return self._doc_to_dict(docs[0])
 
         return await self._execute(_find)
+
+    async def set_password_reset_token(self, email: str, token: str, expires_at: datetime) -> bool:
+        """Store a password reset token for a user"""
+        async def _update():
+            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).limit(1).get()
+            if not docs:
+                return False
+            doc_ref = self.collection.document(docs[0].id)
+            await doc_ref.update({
+                "password_reset_token": token,
+                "password_reset_expires": expires_at,
+                "updated_at": datetime.now(timezone.utc)
+            })
+            return True
+        return await self._execute(_update)
+
+    async def verify_reset_token_and_update_password(self, email: str, token: str, hashed_password: str) -> bool:
+        """Verify reset token and update the user's password"""
+        async def _reset():
+            # Query by email only to avoid requiring a composite index,
+            # then validate the token and expiry in Python
+            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).limit(1).get()
+            if not docs:
+                return False
+            data = docs[0].to_dict()
+            if data.get("password_reset_token") != token:
+                return False
+            expires = data.get("password_reset_expires")
+            if not expires or expires < datetime.now(timezone.utc):
+                return False
+            doc_ref = self.collection.document(docs[0].id)
+            await doc_ref.update({
+                "hashed_password": hashed_password,
+                "password_reset_token": None,
+                "password_reset_expires": None,
+                "updated_at": datetime.now(timezone.utc)
+            })
+            return True
+        return await self._execute(_reset)

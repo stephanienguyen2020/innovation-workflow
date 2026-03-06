@@ -7,11 +7,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     // Get the project ID from the URL
-    const projectId = params.projectId;
+    const { projectId } = await params;
 
     // Get solution ID from the query parameters
     const searchParams = request.nextUrl.searchParams;
@@ -29,7 +29,7 @@ export async function POST(
     );
 
     // Get the access token from cookies for authentication
-    const accessToken = cookies().get("access_token")?.value;
+    const accessToken = (await cookies()).get("access_token")?.value;
 
     // Set up headers
     const headers: HeadersInit = {

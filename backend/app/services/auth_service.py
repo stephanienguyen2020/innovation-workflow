@@ -7,7 +7,8 @@ from app.database.query.db_auth import DBAuth
 from app.schema.user import (
     UserCreate, UserDB, create_access_token, hash_password, verify_password,
     generate_verification_code, create_verification_code_expiry,
-    EmailVerificationRequest, EmailVerificationCode, ResendVerificationCode
+    EmailVerificationRequest, EmailVerificationCode, ResendVerificationCode,
+    ForgotPasswordRequest, ResetPasswordRequest
 )
 from app.services.email_service import EmailService
 from app.utils.email_validator import email_validator
@@ -33,6 +34,9 @@ class AuthService:
     async def signup(self, user: UserCreate) -> JSONResponse:
         """Handle user signup with email whitelist validation and email verification"""
         try:
+            # Normalize email to lowercase
+            user.email = user.email.strip().lower()
+
             # Validate email against whitelist
             if not await email_validator.is_email_allowed(user.email):
                 error_message = await email_validator.get_validation_error_message(user.email)
@@ -126,8 +130,11 @@ class AuthService:
     async def login(self, form_data: OAuth2PasswordRequestForm) -> JSONResponse:
         """Handle user login"""
         try:
+            # Normalize email to lowercase
+            email = form_data.username.strip().lower()
+
             # Find user by email
-            user = await self.db_auth.find_user_by_email(form_data.username)
+            user = await self.db_auth.find_user_by_email(email)
             if not user or not verify_password(form_data.password, user["hashed_password"]):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -198,9 +205,10 @@ class AuthService:
     async def verify_email(self, verification_data: EmailVerificationCode) -> JSONResponse:
         """Verify email using verification code"""
         try:
+            verification_data.email = verification_data.email.strip().lower()
             # Verify the code and mark email as verified
             verification_success = await self.db_auth.verify_email_code(
-                verification_data.email, 
+                verification_data.email,
                 verification_data.verification_code
             )
             
@@ -232,6 +240,7 @@ class AuthService:
     async def resend_verification_code(self, resend_data: ResendVerificationCode) -> JSONResponse:
         """Resend verification code to user's email"""
         try:
+            resend_data.email = resend_data.email.strip().lower()
             # Check if user exists and is unverified
             user = await self.db_auth.find_unverified_user_by_email(resend_data.email)
             if not user:
@@ -284,6 +293,77 @@ class AuthService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to resend verification code: {str(e)}"
+            )
+
+    async def forgot_password(self, request: ForgotPasswordRequest) -> JSONResponse:
+        """Send a password reset code to the user's email"""
+        try:
+            request.email = request.email.strip().lower()
+            user = await self.db_auth.find_user_by_email(request.email)
+            # Always return success to prevent email enumeration
+            if not user:
+                return JSONResponse(
+                    content={
+                        "message": "If an account with that email exists, a reset code has been sent.",
+                        "email": request.email
+                    },
+                    status_code=status.HTTP_200_OK
+                )
+
+            reset_code = generate_verification_code()
+            reset_expires = create_verification_code_expiry()
+
+            await self.db_auth.set_password_reset_token(
+                request.email, reset_code, reset_expires
+            )
+
+            await self.email_service.send_password_reset_email(
+                request.email, reset_code
+            )
+
+            return JSONResponse(
+                content={
+                    "message": "If an account with that email exists, a reset code has been sent.",
+                    "email": request.email
+                },
+                status_code=status.HTTP_200_OK
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to process password reset request: {str(e)}"
+            )
+
+    async def reset_password(self, request: ResetPasswordRequest) -> JSONResponse:
+        """Reset user password using a valid reset code"""
+        try:
+            request.email = request.email.strip().lower()
+            new_hashed = hash_password(request.new_password)
+            success = await self.db_auth.verify_reset_token_and_update_password(
+                request.email, request.token, new_hashed
+            )
+
+            if not success:
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={
+                        "statusCode": 400,
+                        "message": "Invalid or expired reset code",
+                        "errorCode": "INVALID_RESET_CODE"
+                    }
+                )
+
+            return JSONResponse(
+                content={
+                    "message": "Password reset successfully. You can now log in with your new password.",
+                    "email": request.email
+                },
+                status_code=status.HTTP_200_OK
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to reset password: {str(e)}"
             )
 
     async def ensure_admin_account_exists(self) -> bool:

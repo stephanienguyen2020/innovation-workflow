@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from app.schema.user import UserCreate, EmailVerificationCode, ResendVerificationCode
+from app.schema.user import UserCreate, EmailVerificationCode, ResendVerificationCode, ForgotPasswordRequest, ResetPasswordRequest
 from app.database.database import get_db
 from app.database.query.db_auth import DBAuth
 from app.services.auth_service import AuthService
@@ -38,3 +38,17 @@ async def resend_verification_code(resend_data: ResendVerificationCode, db=Depen
     db_auth = DBAuth(db)
     auth_service = AuthService(db_auth)
     return await auth_service.resend_verification_code(resend_data)
+
+@router.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest, db=Depends(get_db)):
+    """Request a password reset code"""
+    db_auth = DBAuth(db)
+    auth_service = AuthService(db_auth)
+    return await auth_service.forgot_password(request)
+
+@router.post("/reset-password")
+async def reset_password(request: ResetPasswordRequest, db=Depends(get_db)):
+    """Reset password using a valid reset code"""
+    db_auth = DBAuth(db)
+    auth_service = AuthService(db_auth)
+    return await auth_service.reset_password(request)

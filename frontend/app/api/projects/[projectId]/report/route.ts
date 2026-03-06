@@ -59,10 +59,10 @@ async function getFormattedReportData(projectId: string, accessToken: string) {
 
 export async function GET(
   request: Request,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const { projectId } = params;
-  const accessToken = cookies().get("access_token")?.value;
+  const { projectId } = await params;
+  const accessToken = (await cookies()).get("access_token")?.value;
 
   if (!accessToken) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });

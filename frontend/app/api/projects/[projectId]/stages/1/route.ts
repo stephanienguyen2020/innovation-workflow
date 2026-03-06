@@ -7,15 +7,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     // Get the project ID from the URL
-    const projectId = params.projectId;
+    const { projectId } = await params;
     console.log(`Fetching stage 1 data for project ID: ${projectId}`);
 
     // Get the access token from cookies for authentication
-    const accessToken = cookies().get("access_token")?.value;
+    const accessToken = (await cookies()).get("access_token")?.value;
 
     // Set up headers
     const headers: HeadersInit = {

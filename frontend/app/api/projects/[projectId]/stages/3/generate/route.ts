@@ -7,15 +7,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     // Get the project ID from the URL
-    const projectId = params.projectId;
+    const { projectId } = await params;
     console.log(`Processing stage 3 for project ID: ${projectId}`);
 
     // Get the access token from cookies for authentication
-    const accessToken = cookies().get("access_token")?.value;
+    const accessToken = (await cookies()).get("access_token")?.value;
 
     // Set up headers
     const headers: HeadersInit = {
@@ -25,6 +25,12 @@ export async function POST(
     // Add authorization header if token exists
     if (accessToken) {
       headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+
+    // Forward model selection header
+    const modelType = request.headers.get("X-Model-Type");
+    if (modelType) {
+      headers["X-Model-Type"] = modelType;
     }
 
     // Extract the exact query parameters that need to be passed

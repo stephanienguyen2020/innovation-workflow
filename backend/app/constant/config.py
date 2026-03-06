@@ -4,8 +4,10 @@ from dotenv import load_dotenv
 dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 load_dotenv(dotenv_path=dotenv_path, override=True)
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
 APIFY_KEY = os.getenv("APIFY_KEY")
 SECRET_KEY= os.getenv("SECRET_KEY")
@@ -32,5 +34,15 @@ CONFIG_LIST = [
         "model": GEMINI_MODEL,
         "api_key": GEMINI_API_KEY,
         "api_type": "google"
-    }
+    },
+    {
+        "model": "claude-sonnet-4-6",
+        "api_key": CLAUDE_API_KEY,
+        "api_type": "anthropic"
+    },
+    {
+        "model": "gpt-4o",
+        "api_key": OPENAI_API_KEY,
+        "api_type": "openai"
+    },
 ]

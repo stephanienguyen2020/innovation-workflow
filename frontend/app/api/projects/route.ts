@@ -8,7 +8,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 export async function POST(request: NextRequest) {
   try {
     // Get the access token from cookies for authentication
-    const accessToken = cookies().get("access_token")?.value;
+    const accessToken = (await cookies()).get("access_token")?.value;
 
     console.log("Creating project - Access token exists:", !!accessToken);
 
@@ -107,7 +107,7 @@ export interface Project {
 export async function GET() {
   try {
     // Get the access token from cookies for authentication
-    const accessToken = cookies().get("access_token")?.value;
+    const accessToken = (await cookies()).get("access_token")?.value;
 
     console.log("Fetching projects - Access token exists:", !!accessToken);
 

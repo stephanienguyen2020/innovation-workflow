@@ -90,3 +90,11 @@ class EmailVerificationCode(BaseModel):
 
 class ResendVerificationCode(BaseModel):
     email: EmailStr
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    token: str
+    new_password: str

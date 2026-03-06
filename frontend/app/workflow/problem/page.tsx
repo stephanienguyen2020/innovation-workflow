@@ -6,6 +6,7 @@ import { useState, useEffect, Suspense } from "react";
 import { ChevronDown, Rocket, Loader2, ArrowLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useModel } from "@/context/ModelContext";
+import ModelSelector from "@/components/ModelSelector";
 
 interface ProblemStatement {
   id: string;
@@ -82,6 +83,7 @@ function ProblemDefinitionContent() {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "X-Model-Type": model,
             },
           }
         );
@@ -432,7 +434,10 @@ function ProblemDefinitionContent() {
           </button>
         )}
 
-        <h2 className="text-4xl font-bold">Problem Definition</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-4xl font-bold">Problem Definition</h2>
+          <ModelSelector />
+        </div>
         <p className="text-2xl">
           Select from the following problem statement or enter your own
         </p>

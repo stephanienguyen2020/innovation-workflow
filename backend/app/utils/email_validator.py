@@ -64,21 +64,21 @@ class EmailWhitelistValidator:
         if ADMIN_EMAIL and email.lower() == ADMIN_EMAIL.lower():
             return True
         
-        # Split email into username and domain
-        username, domain = email.split('@', 1)
-        
+        # Split email into username and domain (lowercase for case-insensitive comparison)
+        username, domain = email.lower().split('@', 1)
+
         data = await self._get_data()
-        
+
         # Check if username is in allowed list
         allowed_usernames = data.get("allowed_usernames", [])
         if username not in allowed_usernames:
             return False
-        
+
         # Check if domain is in allowed list
         allowed_domains = data.get("allowed_domains", [])
         if domain not in allowed_domains:
             return False
-        
+
         return True
     
     async def get_allowed_usernames(self) -> List[str]:
@@ -112,15 +112,15 @@ class EmailWhitelistValidator:
         if ADMIN_EMAIL and email.lower() == ADMIN_EMAIL.lower():
             return "Admin email is always allowed"
         
-        username, domain = email.split('@', 1)
-        
+        username, domain = email.lower().split('@', 1)
+
         data = await self._get_data()
         allowed_usernames = data.get("allowed_usernames", [])
         allowed_domains = data.get("allowed_domains", [])
-        
+
         if username not in allowed_usernames:
             return f"Email username '{username}' is not authorized for registration"
-        
+
         if domain not in allowed_domains:
             return f"Email domain '{domain}' is not allowed. Please use columbia.edu or barnard.edu"
         
@@ -180,6 +180,37 @@ class EmailWhitelistValidator:
             print(f"Error adding domain: {e}")
             return False
     
+    async def add_usernames_bulk(self, usernames: List[str], domains: List[str]) -> dict:
+        """Add multiple usernames and domains at once, returning added/skipped counts"""
+        self._ensure_db()
+
+        current_data = await self._load_from_db()
+        current_usernames = set(current_data.get("allowed_usernames", []))
+        current_domains = set(current_data.get("allowed_domains", []))
+
+        new_usernames = [u for u in usernames if u not in current_usernames]
+        skipped_usernames = [u for u in usernames if u in current_usernames]
+        new_domains = [d for d in domains if d not in current_domains]
+
+        try:
+            doc_ref = self.db.collection("allowed_emails").document("email_whitelist")
+            update = {}
+            if new_usernames:
+                update["allowed_usernames"] = ArrayUnion(new_usernames)
+            if new_domains:
+                update["allowed_domains"] = ArrayUnion(new_domains)
+            if update:
+                await doc_ref.set(update, merge=True)
+            self._cache = None
+            return {
+                "added": new_usernames,
+                "skipped": skipped_usernames,
+                "domains_added": new_domains,
+            }
+        except Exception as e:
+            print(f"Error bulk adding usernames: {e}")
+            raise
+
     async def remove_domain(self, domain: str) -> bool:
         """Remove a domain from the allowed list"""
         self._ensure_db()

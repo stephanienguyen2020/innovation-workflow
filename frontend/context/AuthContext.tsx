@@ -244,11 +244,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error("Signup failed:", {
-          status: response.status,
-          statusText: response.statusText,
-          data,
-        });
         throw new Error(
           data.detail ||
             data.message ||
@@ -259,7 +254,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Return the response data for the frontend to handle email verification
       return data;
     } catch (error) {
-      console.error("Signup error:", error);
       throw error;
     } finally {
       setLoading(false);

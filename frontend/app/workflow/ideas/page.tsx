@@ -5,6 +5,8 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect, Suspense } from "react";
 import { ChevronDown, Rocket, Loader2, RefreshCw } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useModel } from "@/context/ModelContext";
+import ModelSelector from "@/components/ModelSelector";
 
 interface ProductIdea {
   id: string;
@@ -53,6 +55,7 @@ function formatDetailedExplanation(text: string): string {
 function IdeationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { model } = useModel();
   const projectIdFromUrl = searchParams.get("projectId");
   const projectId = projectIdFromUrl || (typeof window !== "undefined" ? localStorage.getItem("currentProjectId") : null);
   const problemId = searchParams.get("problemId");
@@ -364,6 +367,7 @@ function IdeationContent() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Model-Type": model,
         },
       });
 
@@ -537,7 +541,10 @@ function IdeationContent() {
 
       {/* Main Content */}
       <div className="space-y-16">
-        <h2 className="text-5xl font-bold mb-8">Ideas</h2>
+        <div className="flex items-center justify-between mb-8">
+          <h2 className="text-5xl font-bold">Ideas</h2>
+          <ModelSelector />
+        </div>
 
         {/* Error State */}
         {error && (

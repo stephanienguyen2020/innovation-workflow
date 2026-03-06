@@ -153,7 +153,16 @@ function LoginContent() {
             </div>
           </div>
 
-          <div className="mt-6">
+          <div className="flex justify-end">
+            <Link
+              href="/forgot-password"
+              className="text-sm text-[#001DFA] hover:text-blue-700 font-medium"
+            >
+              Forgot password?
+            </Link>
+          </div>
+
+          <div className="mt-4">
             <button
               type="submit"
               disabled={loading}

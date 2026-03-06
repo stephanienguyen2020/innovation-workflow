@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const accessToken = cookies().get("access_token")?.value;
+    const accessToken = (await cookies()).get("access_token")?.value;
     console.log("Checking authentication - Token exists:", !!accessToken);
 
     if (!accessToken) {

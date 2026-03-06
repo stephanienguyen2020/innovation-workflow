@@ -22,6 +22,10 @@ class DomainRequest(BaseModel):
     domain: str
 
 
+class BulkEmailsRequest(BaseModel):
+    emails: List[str]
+
+
 class AllowedEmailsResponse(BaseModel):
     allowed_usernames: List[str]
     allowed_domains: List[str]
@@ -75,23 +79,49 @@ async def add_username(
 ):
     """
     Add a username to the allowed list.
+    Accepts either a plain username (e.g., "abc1234") or a full email
+    (e.g., "abc1234@columbia.edu"), in which case the domain is also added automatically.
     Admin only.
     """
-    username = request.username.strip().lower()
-    if not username:
+    value = request.username.strip().lower()
+    if not value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username cannot be empty"
         )
-    
+
+    domain_added = None
+    if "@" in value:
+        username, domain = value.split("@", 1)
+        domain_to_add = domain
+    else:
+        username = value
+        domain_to_add = None
+
+    # Check for duplicate before adding
+    current_usernames = await email_validator.get_allowed_usernames()
+    if username in current_usernames:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Username '{username}' is already in the whitelist"
+        )
+
+    if domain_to_add:
+        await email_validator.add_domain(domain_to_add)
+        domain_added = domain_to_add
+
     success = await email_validator.add_username(username)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to add username"
         )
-    
-    return {"message": f"Username '{username}' added successfully", "username": username}
+
+    msg = f"Username '{username}' added successfully"
+    if domain_added:
+        msg += f" (domain '{domain_added}' also added)"
+
+    return {"message": msg, "username": username, "domain_added": domain_added}
 
 
 @router.delete("/allowed-emails/usernames/{username}")
@@ -169,5 +199,53 @@ async def remove_domain(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to remove domain"
         )
-    
+
     return {"message": f"Domain '{domain}' removed successfully", "domain": domain}
+
+
+@router.post("/allowed-emails/bulk")
+async def bulk_add_emails(
+    request: BulkEmailsRequest,
+    admin: UserProfile = Depends(require_admin),
+    db: AsyncClient = Depends(get_db)
+):
+    """
+    Bulk add emails/usernames to the whitelist from an uploaded list.
+    Accepts full emails (extracts username + domain) or plain usernames.
+    Admin only.
+    """
+    usernames: List[str] = []
+    domains: List[str] = []
+
+    for entry in request.emails:
+        entry = entry.strip().lower()
+        if not entry:
+            continue
+        if "@" in entry:
+            username, domain = entry.split("@", 1)
+            if username:
+                usernames.append(username)
+            if domain:
+                domains.append(domain)
+        else:
+            usernames.append(entry)
+
+    # Deduplicate while preserving order
+    usernames = list(dict.fromkeys(usernames))
+    domains = list(dict.fromkeys(domains))
+
+    if not usernames:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid emails or usernames found in the provided list"
+        )
+
+    result = await email_validator.add_usernames_bulk(usernames, domains)
+
+    return {
+        "message": f"Bulk upload complete: {len(result['added'])} added, {len(result['skipped'])} skipped",
+        "added": result["added"],
+        "skipped": result["skipped"],
+        "domains_added": result["domains_added"],
+        "total_processed": len(usernames),
+    }

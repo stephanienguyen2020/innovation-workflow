@@ -7,7 +7,9 @@ import { useState, useEffect, Suspense } from "react";
 import { Upload, Rocket, Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useModel } from "@/context/ModelContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import ModelSelector from "@/components/ModelSelector";
 
 // Define the backend API URL - must be configured via environment variable
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -30,6 +32,7 @@ function UploadContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const { model } = useModel();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [pastedText, setPastedText] = useState("");
   const [analysis, setAnalysis] = useState("");
@@ -295,6 +298,9 @@ function UploadContent() {
 
       const response = await fetch(proxyUrl, {
         method: "POST",
+        headers: {
+          "X-Model-Type": model,
+        },
       });
 
       if (!response.ok) {
@@ -445,7 +451,10 @@ function UploadContent() {
 
         {/* Main Content */}
         <div className="space-y-12">
-          <h2 className="text-4xl font-bold">Interview Transcript Analysis</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-4xl font-bold">Interview Transcript Analysis</h2>
+            <ModelSelector />
+          </div>
 
           {isRestoringState && (
             <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded flex items-center">

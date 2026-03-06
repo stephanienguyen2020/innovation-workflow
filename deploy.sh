@@ -36,7 +36,7 @@ BACKEND_MAX_INSTANCES="5"
 
 FRONTEND_MEMORY="512Mi"
 FRONTEND_CPU="1"
-FRONTEND_TIMEOUT="60"
+FRONTEND_TIMEOUT="300"
 FRONTEND_MIN_INSTANCES="0"
 FRONTEND_MAX_INSTANCES="5"
 
@@ -109,6 +109,8 @@ echo "(These will be stored in Google Secret Manager)"
 echo
 
 prompt_secret GEMINI_API_KEY "Gemini API Key"
+prompt_secret CLAUDE_API_KEY "Claude API Key (for LLM fallback)"
+prompt_secret OPENAI_API_KEY "OpenAI API Key (for LLM fallback)"
 prompt_secret JWT_SECRET_VAL "JWT Secret"
 prompt_secret SECRET_KEY_VAL "Session Secret Key"
 prompt_value ADMIN_EMAIL_VAL "Admin Email" ""
@@ -148,6 +150,8 @@ gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
 log "Storing secrets in Secret Manager..."
 create_or_update_secret "gemini-api-key" "$GEMINI_API_KEY"
+create_or_update_secret "claude-api-key" "$CLAUDE_API_KEY"
+create_or_update_secret "openai-api-key" "$OPENAI_API_KEY"
 create_or_update_secret "jwt-secret" "$JWT_SECRET_VAL"
 create_or_update_secret "secret-key" "$SECRET_KEY_VAL"
 create_or_update_secret "admin-email" "$ADMIN_EMAIL_VAL"
@@ -158,7 +162,7 @@ PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectN
 SA_EMAIL="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
 log "Granting Secret Manager access to Cloud Run service account..."
-for secret in gemini-api-key jwt-secret secret-key admin-email admin-password; do
+for secret in gemini-api-key claude-api-key openai-api-key jwt-secret secret-key admin-email admin-password; do
     gcloud secrets add-iam-policy-binding "$secret" \
         --project="$PROJECT_ID" \
         --member="serviceAccount:${SA_EMAIL}" \
@@ -184,6 +188,8 @@ if [[ -n "$FIRESTORE_DB" ]]; then
 fi
 
 SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
+SECRETS+=",CLAUDE_API_KEY=claude-api-key:latest"
+SECRETS+=",OPENAI_API_KEY=openai-api-key:latest"
 SECRETS+=",JWT_SECRET=jwt-secret:latest"
 SECRETS+=",SECRET_KEY=secret-key:latest"
 SECRETS+=",ADMIN_EMAIL=admin-email:latest"

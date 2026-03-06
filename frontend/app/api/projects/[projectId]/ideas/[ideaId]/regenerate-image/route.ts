@@ -5,10 +5,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function POST(
   request: Request,
-  { params }: { params: { projectId: string; ideaId: string } }
+  { params }: { params: Promise<{ projectId: string; ideaId: string }> }
 ) {
-  const { projectId, ideaId } = params;
-  const accessToken = cookies().get("access_token")?.value;
+  const { projectId, ideaId } = await params;
+  const accessToken = (await cookies()).get("access_token")?.value;
 
   if (!accessToken) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
