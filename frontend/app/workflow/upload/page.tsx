@@ -45,6 +45,7 @@ function UploadContent() {
   >([]);
   const [isRestoringState, setIsRestoringState] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [generatedWithModel, setGeneratedWithModel] = useState<string | null>(null);
 
   useEffect(() => {
     // Get the project ID from URL params or localStorage as fallback
@@ -360,6 +361,8 @@ function UploadContent() {
       if (!streamedAnalysis) {
         throw new Error("No analysis data received from the server");
       }
+
+      setGeneratedWithModel(model);
     } catch (err) {
       console.error("Error generating analysis:", err);
       setError(
@@ -610,6 +613,8 @@ function UploadContent() {
                   <Loader2 className="w-5 h-5 animate-spin" />
                   Analyzing...
                 </>
+              ) : analysis ? (
+                "Re-Analyze"
               ) : (
                 "Generate Analysis"
               )}

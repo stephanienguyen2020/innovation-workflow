@@ -112,7 +112,7 @@ class ProjectService:
         if data:
             stage.data = {**stage.data, **data} if stage.data else data
         if status in ("completed", "in_progress", "not_started"):
-            stage.status = status
+            stage.status = StageStatus(status)
         stage.updated_at = datetime.utcnow()
         project.updated_at = datetime.utcnow()
 
@@ -647,10 +647,10 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
                 {"chosen_solution": chosen_solution}
             )
             
-            # Find the chosen problem from stage 2
+            # Find the chosen problem from stage 2 (check both generated and custom problems)
             stage_2 = next((s for s in project.stages if s.stage_number == 2), None)
-            problem_statements = stage_2.data.get("problem_statements", [])
-            chosen_problem = next((p for p in problem_statements if p.get("id") == chosen_solution.get("problem_id")), None)
+            all_problems = stage_2.data.get("problem_statements", []) + stage_2.data.get("custom_problems", [])
+            chosen_problem = next((p for p in all_problems if p.get("id") == chosen_solution.get("problem_id")), None)
             
             # Return formatted data for the report
             return {

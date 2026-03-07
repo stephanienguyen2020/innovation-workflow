@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from google.cloud.firestore_v1.async_client import AsyncClient
+from google.cloud.firestore_v1.base_query import FieldFilter
 from typing import List
 from pydantic import BaseModel
 
@@ -249,3 +250,47 @@ async def bulk_add_emails(
         "domains_added": result["domains_added"],
         "total_processed": len(usernames),
     }
+
+
+# ==================== User Management ====================
+
+@router.get("/users")
+async def get_all_users(
+    admin: UserProfile = Depends(require_admin),
+    db: AsyncClient = Depends(get_db)
+):
+    """Get all registered users with their project counts. Admin only."""
+    # Fetch all users from the users collection
+    users_ref = db.collection("users")
+    users_docs = await users_ref.get()
+
+    users = []
+    for doc in users_docs:
+        data = doc.to_dict()
+        user_id = doc.id
+
+        # Count projects for this user
+        projects_query = db.collection("projects").where(
+            filter=FieldFilter("user_id", "==", user_id)
+        )
+        projects_docs = await projects_query.get()
+
+        total_projects = len(projects_docs)
+        completed_projects = sum(
+            1 for p in projects_docs
+            if p.to_dict().get("status") == "completed"
+        )
+
+        users.append({
+            "id": user_id,
+            "name": data.get("name", ""),
+            "email": data.get("email", ""),
+            "role": data.get("role", "user"),
+            "is_email_verified": data.get("is_email_verified", False),
+            "created_at": data.get("created_at"),
+            "last_login": data.get("last_login"),
+            "total_projects": total_projects,
+            "completed_projects": completed_projects,
+        })
+
+    return users

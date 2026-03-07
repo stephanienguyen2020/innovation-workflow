@@ -6,6 +6,7 @@ from datetime import datetime
 from io import BytesIO
 from PIL import Image as PILImage
 from google import genai
+from google.genai import types
 from google.cloud.firestore_v1.async_client import AsyncClient
 from app.constant.config import GEMINI_API_KEY
 
@@ -98,18 +99,22 @@ Style: Professional product visualization. High quality, modern design aesthetic
 
             try:
                 response = self._genai_client.models.generate_content(
-                    model="gemini-2.5-flash-image",
+                    model="gemini-3-pro-image-preview",
                     contents=[prompt],
+                    config=types.GenerateContentConfig(
+                        response_modalities=['TEXT', 'IMAGE'],
+                    ),
                 )
 
                 # Extract image from response parts
                 image_bytes = None
                 content_type = "image/png"
-                for part in response.parts:
-                    if part.inline_data is not None:
-                        image_bytes = part.inline_data.data
-                        content_type = part.inline_data.mime_type or "image/png"
-                        break
+                if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                    for part in response.candidates[0].content.parts:
+                        if part.inline_data is not None:
+                            image_bytes = part.inline_data.data
+                            content_type = part.inline_data.mime_type or "image/png"
+                            break
 
                 if image_bytes is None:
                     logger.error("No image data returned from Gemini")
@@ -137,7 +142,7 @@ Style: Professional product visualization. High quality, modern design aesthetic
                         "original_url": "generated_by_gemini",
                         "created_at": datetime.utcnow(),
                         "size_bytes": len(image_bytes),
-                        "model": "gemini-2.5-flash-image"
+                        "model": "gemini-3-pro-image-preview"
                     }
 
                     doc_ref = collection.document()

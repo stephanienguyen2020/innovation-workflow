@@ -37,6 +37,7 @@ function ProblemDefinitionContent() {
   const [hasUploadState, setHasUploadState] = useState(false);
   const [generatingIdeas, setGeneratingIdeas] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
+  const [generatedWithModel, setGeneratedWithModel] = useState<string | null>(null);
 
   // Check if we have upload state saved in localStorage
   useEffect(() => {
@@ -60,65 +61,67 @@ function ProblemDefinitionContent() {
     }
   }, [projectId]);
 
+  // Function to generate problem statements
+  const generateProblemStatements = async () => {
+    if (!projectId) return;
+    setGeneratingProblems(true);
+    setError(null);
+
+    try {
+      console.log(
+        "Initiating problem statement generation for project:",
+        projectId
+      );
+      const response = await fetch(
+        `/api/projects/${projectId}/stages/2/generate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Model-Type": model,
+          },
+        }
+      );
+
+      console.log("Problem generation response status:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.detail || "Failed to generate problem statements"
+        );
+      }
+
+      const fetchData = await response.json();
+      console.log("Problem generation successful, result:", fetchData);
+
+      if (
+        fetchData &&
+        fetchData.data &&
+        Array.isArray(fetchData.data.problem_statements) &&
+        fetchData.data.problem_statements.length > 0
+      ) {
+        setProblemStatements(fetchData.data.problem_statements);
+        setGeneratedWithModel(model);
+      } else {
+        throw new Error("No problem statements were generated");
+      }
+    } catch (err) {
+      console.error("Problem statement generation error:", err);
+      setError(
+        (err as Error).message || "Failed to generate problem statements"
+      );
+    } finally {
+      setGeneratingProblems(false);
+    }
+  };
+
   useEffect(() => {
     if (!projectId) {
       setError("No project ID provided. Please go back and select a project.");
       router.push("/workflow");
       return;
     }
-
-    // Function to generate problem statements
-    const generateProblemStatements = async () => {
-      setGeneratingProblems(true);
-      setError(null);
-
-      try {
-        console.log(
-          "Initiating problem statement generation for project:",
-          projectId
-        );
-        const response = await fetch(
-          `/api/projects/${projectId}/stages/2/generate`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Model-Type": model,
-            },
-          }
-        );
-
-        console.log("Problem generation response status:", response.status);
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(
-            errorData.detail || "Failed to generate problem statements"
-          );
-        }
-
-        const fetchData = await response.json();
-        console.log("Problem generation successful, result:", fetchData);
-
-        if (
-          fetchData &&
-          fetchData.data &&
-          Array.isArray(fetchData.data.problem_statements) &&
-          fetchData.data.problem_statements.length > 0
-        ) {
-          setProblemStatements(fetchData.data.problem_statements);
-        } else {
-          throw new Error("No problem statements were generated");
-        }
-      } catch (err) {
-        console.error("Problem statement generation error:", err);
-        setError(
-          (err as Error).message || "Failed to generate problem statements"
-        );
-      } finally {
-        setGeneratingProblems(false);
-      }
-    };
 
     // Function to fetch problem statements
     const fetchProblemStatements = async () => {
@@ -165,6 +168,7 @@ function ProblemDefinitionContent() {
         // Backend format: { stage_number, status, data: { problem_statements: [...] } }
         if (data && data.data && Array.isArray(data.data.problem_statements)) {
           setProblemStatements(data.data.problem_statements);
+          setGeneratedWithModel(model);
         } else {
           console.error("Invalid response format:", data);
           throw new Error("Invalid response format");
@@ -181,7 +185,7 @@ function ProblemDefinitionContent() {
 
     // Fetch problem statements when the component mounts
     fetchProblemStatements();
-  }, [projectId, model]);
+  }, [projectId]);
 
   const handleProblemSelect = (id: string) => {
     setSelectedProblem(id);
@@ -608,26 +612,48 @@ function ProblemDefinitionContent() {
         <div className="flex flex-wrap gap-4 pt-4">
           <button
             onClick={handleGoBackToUpload}
-            disabled={generatingIdeas}
+            disabled={generatingIdeas || generatingProblems}
             className={`bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity ${
-                       generatingIdeas ? "opacity-50 cursor-not-allowed" : ""
+                       generatingIdeas || generatingProblems ? "opacity-50 cursor-not-allowed" : ""
                      }`}
           >
             Back to Research
           </button>
+          {problemStatements.length > 0 && (
+            <button
+              onClick={generateProblemStatements}
+              disabled={loading || generatingProblems || generatingIdeas}
+              className={`bg-gray-700 text-white px-8 py-3 rounded-[10px] text-xl font-medium
+                       hover:opacity-90 transition-opacity inline-flex items-center gap-2
+                       ${
+                         loading || generatingProblems || generatingIdeas
+                           ? "opacity-70 cursor-not-allowed"
+                           : ""
+                       }`}
+            >
+              {generatingProblems ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Re-Generating...
+                </>
+              ) : (
+                "Re-Generate Problems"
+              )}
+            </button>
+          )}
           <button
             onClick={handleGenerateIdeas}
             disabled={loading || generatingProblems || generatingIdeas}
             className={`bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
-                     hover:opacity-90 transition-opacity inline-flex items-center gap-2 
+                     hover:opacity-90 transition-opacity inline-flex items-center gap-2
                      ${
                        loading || generatingProblems || generatingIdeas
                          ? "opacity-70 cursor-not-allowed"
                          : ""
                      }`}
           >
-            Generate ideas
+            Generate Ideas
             {loading || generatingProblems || generatingIdeas ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (

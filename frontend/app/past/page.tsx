@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useRouter } from "next/navigation";
-import { Trash2, Loader2 } from "lucide-react";
+import { Trash2, Loader2, Search } from "lucide-react";
 import type { Project } from "../api/projects/route";
+
+type SortField = "problem_domain" | "created_at" | "updated_at" | "status";
+type SortDirection = "asc" | "desc";
 
 export default function PastProjectsPage() {
   const { user, loading } = useAuth();
@@ -18,6 +21,39 @@ export default function PastProjectsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
     null
   );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortField, setSortField] = useState<SortField>("updated_at");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("desc");
+    }
+  };
+
+  const filteredAndSortedProjects = useMemo(() => {
+    let filtered = projects;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = projects.filter((p) =>
+        p.problem_domain.toLowerCase().includes(query)
+      );
+    }
+
+    return [...filtered].sort((a, b) => {
+      let comparison = 0;
+      if (sortField === "problem_domain" || sortField === "status") {
+        comparison = a[sortField].localeCompare(b[sortField]);
+      } else {
+        comparison =
+          new Date(a[sortField]).getTime() - new Date(b[sortField]).getTime();
+      }
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
+  }, [projects, searchQuery, sortField, sortDirection]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -57,8 +93,10 @@ export default function PastProjectsPage() {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
       year: "numeric",
-      month: "long",
+      month: "short",
       day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
     });
   };
 
@@ -86,6 +124,11 @@ export default function PastProjectsPage() {
     } finally {
       setDeletingProjectId(null);
     }
+  };
+
+  const sortIndicator = (field: SortField) => {
+    if (sortField !== field) return null;
+    return <span className="ml-1">{sortDirection === "asc" ? "▲" : "▼"}</span>;
   };
 
   if (loading || isLoading) {
@@ -123,95 +166,122 @@ export default function PastProjectsPage() {
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-[10px] shadow-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                    Project Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                    Problem Domain
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                    Last Modified
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {projects.map((project) => (
-                  <tr key={project.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => router.push(`/project/${project.id}`)}
-                        className="text-sm font-medium text-gray-900 hover:text-[#001DFA]"
-                      >
-                        {project.problem_domain}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 max-w-md truncate">
-                      {project.problem_domain}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      {formatDate(project.updated_at)}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
-                          ${
-                            project.status === "completed"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-yellow-100 text-yellow-800"
-                          }`}
-                      >
-                        {project.status.replace("_", " ")}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {showDeleteConfirm === project.id ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-sm text-gray-600">Delete?</span>
-                          <button
-                            onClick={() => handleDeleteProject(project.id)}
-                            disabled={deletingProjectId === project.id}
-                            className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
-                          >
-                            {deletingProjectId === project.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              "Yes"
-                            )}
-                          </button>
-                          <button
-                            onClick={() => setShowDeleteConfirm(null)}
-                            className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
-                          >
-                            No
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setShowDeleteConfirm(project.id)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                          title="Delete project"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <>
+          <div className="mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search projects..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-[10px] text-sm focus:outline-none focus:ring-2 focus:ring-[#001DFA] focus:border-transparent"
+              />
+            </div>
           </div>
-        </div>
+
+          <div className="bg-white rounded-[10px] shadow-md overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th
+                      className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer select-none hover:bg-gray-100"
+                      onClick={() => toggleSort("problem_domain")}
+                    >
+                      Project Name{sortIndicator("problem_domain")}
+                    </th>
+                    <th
+                      className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer select-none hover:bg-gray-100"
+                      onClick={() => toggleSort("created_at")}
+                    >
+                      Created{sortIndicator("created_at")}
+                    </th>
+                    <th
+                      className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer select-none hover:bg-gray-100"
+                      onClick={() => toggleSort("updated_at")}
+                    >
+                      Last Modified{sortIndicator("updated_at")}
+                    </th>
+                    <th
+                      className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer select-none hover:bg-gray-100"
+                      onClick={() => toggleSort("status")}
+                    >
+                      Status{sortIndicator("status")}
+                    </th>
+                    <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredAndSortedProjects.map((project) => (
+                    <tr key={project.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => router.push(`/project/${project.id}`)}
+                          className="text-sm font-medium text-gray-900 hover:text-[#001DFA]"
+                        >
+                          {project.problem_domain}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {formatDate(project.created_at)}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {formatDate(project.updated_at)}
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
+                            ${
+                              project.status === "completed"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-yellow-100 text-yellow-800"
+                            }`}
+                        >
+                          {project.status.replace("_", " ")}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {showDeleteConfirm === project.id ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-sm text-gray-600">Delete?</span>
+                            <button
+                              onClick={() => handleDeleteProject(project.id)}
+                              disabled={deletingProjectId === project.id}
+                              className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                            >
+                              {deletingProjectId === project.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                "Yes"
+                              )}
+                            </button>
+                            <button
+                              onClick={() => setShowDeleteConfirm(null)}
+                              className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setShowDeleteConfirm(project.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            title="Delete project"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

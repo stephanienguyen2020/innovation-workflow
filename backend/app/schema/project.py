@@ -39,16 +39,7 @@ class Stage(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
-        json_encoders={
-            StageStatus: lambda x: x.value
-        }
     )
-
-    def dict(self, *args, **kwargs):
-        d = super().dict(*args, **kwargs)
-        if 'status' in d and isinstance(d['status'], StageStatus):
-            d['status'] = d['status'].value
-        return d
 
 class ProjectCreate(BaseModel):
     problem_domain: str
@@ -72,20 +63,5 @@ class Project(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
-        json_encoders={
-            ProjectStatus: lambda x: x.value,
-            StageStatus: lambda x: x.value
-        },
-        populate_by_name=True
+        populate_by_name=True,
     )
-
-    def dict(self, *args, **kwargs):
-        d = super().dict(*args, **kwargs)
-        if 'status' in d and isinstance(d['status'], ProjectStatus):
-            d['status'] = d['status'].value
-        if 'stages' in d:
-            d['stages'] = [
-                {**stage, 'status': stage['status'].value if isinstance(stage['status'], StageStatus) else stage['status']}
-                for stage in d['stages']
-            ]
-        return d

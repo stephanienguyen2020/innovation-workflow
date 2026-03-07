@@ -96,8 +96,8 @@ function ReportContent() {
         console.log("Report data:", data);
         setReportData(data);
 
-        // Auto-save progress once report data is loaded
-        await autoSaveProgress(data);
+        // Mark stage 4 as completed
+        await autoSaveProgress();
       } catch (err) {
         console.error("Error generating report:", err);
         setError((err as Error).message || "Failed to generate report");
@@ -110,12 +110,9 @@ function ReportContent() {
     generateReport();
   }, [projectId, solutionId]);
 
-  // Function to auto-save progress
-  const autoSaveProgress = async (reportData: ReportData) => {
+  // Function to auto-save progress (just marks stage 4 as completed without overwriting data)
+  const autoSaveProgress = async () => {
     try {
-      console.log("Starting auto-save with data:", reportData);
-
-      // Make API call to save progress
       const saveResponse = await fetch(
         `/api/projects/${projectId}/save-progress`,
         {
@@ -125,22 +122,7 @@ function ReportContent() {
           },
           body: JSON.stringify({
             stage: 4,
-            data: {
-              analysis: reportData.analysis,
-              // Format chosen problem to match the expected structure in project/[id]/page.tsx
-              chosen_problem: {
-                id: "chosen-problem-id",
-                problem: reportData.chosen_problem.statement,
-                explanation: reportData.chosen_problem.explanation,
-              },
-              // Format chosen solution to match the expected structure in project/[id]/page.tsx
-              chosen_solution: {
-                id: solutionId || "chosen-solution-id",
-                idea: reportData.chosen_solution.idea,
-                detailed_explanation: reportData.chosen_solution.explanation,
-                problem_id: "chosen-problem-id",
-              },
-            },
+            data: {},
             completed: true,
           }),
         }
@@ -150,19 +132,7 @@ function ReportContent() {
         const errorData = await saveResponse.json();
         console.error("Error auto-saving progress:", errorData);
       } else {
-        const savedData = await saveResponse.json();
-        console.log("Progress auto-saved successfully:", savedData);
-
-        // Also update the project status to completed
-        await fetch(`/api/projects/${projectId}`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            status: "completed",
-          }),
-        });
+        console.log("Progress auto-saved successfully");
       }
     } catch (err) {
       console.error("Error in auto-save:", err);

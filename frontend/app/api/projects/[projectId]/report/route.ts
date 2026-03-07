@@ -37,10 +37,33 @@ async function getFormattedReportData(projectId: string, accessToken: string) {
     throw new Error("Required project data is missing to generate a report");
   }
 
-  // Find the chosen problem statement from stage 2
-  const chosenProblem = stage2Data.problem_statements.find(
+  // Find the chosen problem statement from stage 2 (check both generated and custom problems)
+  const allProblems = [
+    ...(stage2Data.problem_statements || []),
+    ...(stage2Data.custom_problems || []),
+  ];
+  let chosenProblem = allProblems.find(
     (p: any) => p.id === stage4Data.chosen_solution.problem_id
   );
+
+  // Fallback: if problem_id was corrupted, find the real problem via the idea in stage 3
+  if (!chosenProblem) {
+    const stage3Data = project.stages.find(
+      (s: any) => s.stage_number === 3
+    )?.data;
+    if (stage3Data?.product_ideas) {
+      const matchingIdea = stage3Data.product_ideas.find(
+        (idea: any) =>
+          idea.idea === stage4Data.chosen_solution.idea ||
+          idea.id === stage4Data.chosen_solution.id
+      );
+      if (matchingIdea?.problem_id) {
+        chosenProblem = allProblems.find(
+          (p: any) => p.id === matchingIdea.problem_id
+        );
+      }
+    }
+  }
 
   return {
     title: `Innovation Report for ${project.problem_domain}`,

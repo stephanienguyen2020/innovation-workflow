@@ -130,7 +130,6 @@ function IdeationContent() {
 
                 // Fetch the problem statement using this ID
                 await fetchProblemStatement(firstIdeaProblemId);
-                return; // Return early since we'll fetch everything else with the problem ID
               }
             }
           }
@@ -234,12 +233,12 @@ function IdeationContent() {
       if (problemResponse.ok) {
         const problemData = await problemResponse.json();
 
-        if (
-          problemData &&
-          problemData.data &&
-          Array.isArray(problemData.data.problem_statements)
-        ) {
-          const problem = problemData.data.problem_statements.find(
+        if (problemData && problemData.data) {
+          const allProblems = [
+            ...(problemData.data.problem_statements || []),
+            ...(problemData.data.custom_problems || []),
+          ];
+          const problem = allProblems.find(
             (p: ProblemStatement) => p.id === id
           );
 
@@ -354,6 +353,14 @@ function IdeationContent() {
         // For custom problems
         queryParams.append("custom_problem", customProblem);
         console.log(`Custom problem: ${customProblem}`);
+      } else if (productIdeas.length > 0 && productIdeas[0].problem_id) {
+        // Fallback: use problem_id from existing ideas (e.g. when editing a past project)
+        queryParams.append("selected_problem_id", productIdeas[0].problem_id);
+        console.log(`Using problem ID from existing ideas: ${productIdeas[0].problem_id}`);
+      } else if (problemStatement?.id && problemStatement.id !== "custom") {
+        // Fallback: use the currently displayed problem statement
+        queryParams.append("selected_problem_id", problemStatement.id);
+        console.log(`Using problem ID from displayed statement: ${problemStatement.id}`);
       }
 
       // Add the query string to the URL

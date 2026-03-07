@@ -17,6 +17,18 @@ interface BulkResult {
   total_processed: number;
 }
 
+interface UserActivity {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_email_verified: boolean;
+  created_at: string | null;
+  last_login: string | null;
+  total_projects: number;
+  completed_projects: number;
+}
+
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -45,6 +57,13 @@ export default function AdminPage() {
   const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Student activity
+  const [users, setUsers] = useState<UserActivity[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [userSearch, setUserSearch] = useState("");
+  const [sortField, setSortField] = useState<keyof UserActivity>("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
   useEffect(() => {
     if (!authLoading && (!user || user.role !== "admin")) {
       router.push("/");
@@ -54,8 +73,96 @@ export default function AdminPage() {
   useEffect(() => {
     if (user?.role === "admin") {
       fetchData();
+      fetchUsers();
     }
   }, [user]);
+
+  const fetchUsers = async () => {
+    try {
+      setUsersLoading(true);
+      const response = await fetch("/api/admin/users");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to fetch users");
+      }
+      const result = await response.json();
+      setUsers(result);
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const handleSort = (field: keyof UserActivity) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const sortedAndFilteredUsers = users
+    .filter(
+      (u) =>
+        u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
+        u.email.toLowerCase().includes(userSearch.toLowerCase())
+    )
+    .sort((a, b) => {
+      const aVal = a[sortField];
+      const bVal = b[sortField];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDirection === "asc"
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        return sortDirection === "asc" ? aVal - bVal : bVal - aVal;
+      }
+      if (typeof aVal === "boolean" && typeof bVal === "boolean") {
+        return sortDirection === "asc"
+          ? Number(aVal) - Number(bVal)
+          : Number(bVal) - Number(aVal);
+      }
+      return 0;
+    });
+
+  const studentUsers = users.filter((u) => u.role !== "admin");
+  const totalStudents = studentUsers.length;
+  const verifiedStudents = studentUsers.filter(
+    (u) => u.is_email_verified
+  ).length;
+  const totalProjects = studentUsers.reduce(
+    (sum, u) => sum + u.total_projects,
+    0
+  );
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "Never";
+    try {
+      return new Date(dateStr).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return "Invalid";
+    }
+  };
+
+  const SortIcon = ({ field }: { field: keyof UserActivity }) => {
+    if (sortField !== field)
+      return <span className="text-gray-300 ml-1">&#8597;</span>;
+    return (
+      <span className="text-blue-600 ml-1">
+        {sortDirection === "asc" ? "\u2191" : "\u2193"}
+      </span>
+    );
+  };
 
   const fetchData = async () => {
     try {
@@ -451,6 +558,176 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Student Activity Section */}
+        <div className="mt-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Student Activity
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Overview of all registered students and their activity
+              </p>
+
+              {/* Summary Stats */}
+              {!usersLoading && (
+                <div className="flex gap-6 mt-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                    <span className="text-sm text-gray-600">
+                      Total Students:{" "}
+                      <span className="font-semibold text-gray-900">
+                        {totalStudents}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span className="text-sm text-gray-600">
+                      Verified:{" "}
+                      <span className="font-semibold text-gray-900">
+                        {verifiedStudents}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                    <span className="text-sm text-gray-600">
+                      Total Projects:{" "}
+                      <span className="font-semibold text-gray-900">
+                        {totalProjects}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Search */}
+            <div className="p-4 border-b border-gray-100">
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search by name or email..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Table */}
+            {usersLoading ? (
+              <div className="p-12 text-center">
+                <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"></div>
+                <p className="mt-2 text-sm text-gray-500">
+                  Loading students...
+                </p>
+              </div>
+            ) : sortedAndFilteredUsers.length === 0 ? (
+              <div className="p-12 text-center text-gray-500">
+                {userSearch
+                  ? "No students match your search"
+                  : "No students registered yet"}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th
+                        className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:text-gray-900 select-none"
+                        onClick={() => handleSort("name")}
+                      >
+                        Name
+                        <SortIcon field="name" />
+                      </th>
+                      <th
+                        className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:text-gray-900 select-none"
+                        onClick={() => handleSort("email")}
+                      >
+                        Email
+                        <SortIcon field="email" />
+                      </th>
+                      <th
+                        className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:text-gray-900 select-none"
+                        onClick={() => handleSort("role")}
+                      >
+                        Role
+                        <SortIcon field="role" />
+                      </th>
+                      <th
+                        className="px-4 py-3 text-center font-medium text-gray-600 cursor-pointer hover:text-gray-900 select-none"
+                        onClick={() => handleSort("is_email_verified")}
+                      >
+                        Verified
+                        <SortIcon field="is_email_verified" />
+                      </th>
+                      <th
+                        className="px-4 py-3 text-center font-medium text-gray-600 cursor-pointer hover:text-gray-900 select-none"
+                        onClick={() => handleSort("total_projects")}
+                      >
+                        Projects
+                        <SortIcon field="total_projects" />
+                      </th>
+                      <th
+                        className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer hover:text-gray-900 select-none"
+                        onClick={() => handleSort("last_login")}
+                      >
+                        Last Login
+                        <SortIcon field="last_login" />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {sortedAndFilteredUsers.map((u) => (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-900 font-medium">
+                          {u.name || "-"}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 font-mono text-xs">
+                          {u.email}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                              u.role === "admin"
+                                ? "bg-purple-100 text-purple-700"
+                                : "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {u.is_email_verified ? (
+                            <span className="inline-block w-5 h-5 text-green-600">
+                              &#10003;
+                            </span>
+                          ) : (
+                            <span className="inline-block w-5 h-5 text-gray-300">
+                              &#10007;
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center text-gray-700">
+                          {u.total_projects}
+                          {u.completed_projects > 0 && (
+                            <span className="text-green-600 text-xs ml-1">
+                              ({u.completed_projects} done)
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">
+                          {formatDate(u.last_login)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </main>

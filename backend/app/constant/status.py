@@ -1,10 +1,10 @@
 from enum import Enum
 
-class StageStatus(Enum):
+class StageStatus(str, Enum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
 
-class ProjectStatus(Enum):
+class ProjectStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed" 
