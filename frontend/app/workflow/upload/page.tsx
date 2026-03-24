@@ -45,7 +45,9 @@ function UploadContent() {
   >([]);
   const [isRestoringState, setIsRestoringState] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [generatedWithModel, setGeneratedWithModel] = useState<string | null>(null);
+  const [generatedWithModel, setGeneratedWithModel] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     // Get the project ID from URL params or localStorage as fallback
@@ -401,7 +403,9 @@ function UploadContent() {
                     saveStateToLocalStorage();
 
                     if (!projectId) {
-                      setError("Project ID is missing. Please start a new project.");
+                      setError(
+                        "Project ID is missing. Please start a new project."
+                      );
                       return;
                     }
 
@@ -455,7 +459,9 @@ function UploadContent() {
         {/* Main Content */}
         <div className="space-y-12">
           <div className="flex items-center justify-between">
-            <h2 className="text-4xl font-bold">Interview Transcript Analysis</h2>
+            <h2 className="text-4xl font-bold">
+              Interview Transcript Analysis
+            </h2>
             <ModelSelector />
           </div>
 
@@ -475,12 +481,10 @@ function UploadContent() {
           <div className="grid md:grid-cols-2 gap-8">
             {/* Upload Section */}
             <div className="space-y-4">
-              <h3 className="text-2xl font-bold">Upload PDF document</h3>
+              <h3 className="text-2xl font-bold">Upload Document(s)</h3>
               <div
                 className={`border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center min-h-[300px] transition-colors ${
-                  isDragging
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-gray-300"
+                  isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300"
                 }`}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -535,8 +539,8 @@ function UploadContent() {
                     {isUploading
                       ? "Uploading..."
                       : isDragging
-                      ? "Drop PDF here"
-                      : "Drop PDF here or click to upload"}
+                        ? "Drop file(s) here"
+                        : "Drop file(s) here or click to upload"}
                   </span>
                   {fileUploadStatus && (
                     <span

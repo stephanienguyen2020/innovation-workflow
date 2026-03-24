@@ -115,7 +115,7 @@ async def upload_document(
     user: UserProfile = Depends(get_current_user),
     db: AsyncClient = Depends(get_db)
 ) -> Stage:
-    """Stage 1: Upload PDF document (Research - upload only, no analysis)."""
+    """Stage 1: Upload Document(s) (Research - upload only, no analysis)."""
     return await project_service.upload_document(db, project_id, file, user.id)
 
 @router.post("/{project_id}/stages/1/upload-text", response_model=Stage)

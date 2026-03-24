@@ -53,7 +53,7 @@ export default function WorkflowProgress({
               </span>
             </div>
             {step < 5 && (
-              <div className="flex items-center mb-4">
+              <div className="flex items-center mb-4 mx-3">
                 <div className="w-6 h-0.5 bg-black" />
                 <div className="w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-l-[6px] border-l-black" />
               </div>
