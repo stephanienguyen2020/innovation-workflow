@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect, Suspense } from "react";
-import { ChevronDown, Rocket, Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, Rocket, Loader2, RefreshCw, FileText } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useModel } from "@/context/ModelContext";
 import ModelSelector from "@/components/ModelSelector";
@@ -56,6 +56,7 @@ function IdeateContent() {
   const [regeneratingImageId, setRegeneratingImageId] = useState<string | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
   const [imageFeedback, setImageFeedback] = useState<Record<string, string>>({});
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   useEffect(() => {
     if (!projectId) {
@@ -182,6 +183,34 @@ function IdeateContent() {
       alert("Failed to regenerate image. Please try again.");
     } finally {
       setRegeneratingImageId(null);
+    }
+  };
+
+  const handleFinalize = async () => {
+    if (!projectId || !selectedIdea) {
+      setError("Please select a solution first.");
+      return;
+    }
+
+    setIsSubmittingFeedback(true);
+    setError(null);
+
+    try {
+      // Save stage 5 with chosen solution to skip evaluation
+      await fetch(`/api/projects/${projectId}/stages/5/submit-feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evaluation_notes: "",
+          chosen_solution_id: selectedIdea,
+        }),
+      });
+
+      router.push(`/workflow/report?projectId=${projectId}&solutionId=${selectedIdea}`);
+    } catch (err) {
+      setError((err as Error).message || "Failed to finalize");
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   };
 
@@ -452,6 +481,19 @@ function IdeateContent() {
           >
             Evaluate
             <Rocket className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleFinalize}
+            disabled={!selectedIdea || isSubmittingFeedback || isRegenerating}
+            className={`bg-green-600 text-white px-8 py-3 rounded-[10px] text-lg font-medium
+                     hover:bg-green-700 transition-colors inline-flex items-center gap-2
+                     ${!selectedIdea || isSubmittingFeedback || isRegenerating ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            {isSubmittingFeedback ? (
+              <><Loader2 className="w-5 h-5 animate-spin" /> Finalizing...</>
+            ) : (
+              <><FileText className="w-5 h-5" /> Finalize & Generate Report</>
+            )}
           </button>
         </div>
       </div>
