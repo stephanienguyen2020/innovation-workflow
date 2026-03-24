@@ -46,3 +46,43 @@ export async function GET(
     );
   }
 }
+
+// Stage 2: Save progress (ensure stage is marked completed)
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
+  try {
+    const { projectId } = await params;
+    const accessToken = (await cookies()).get("access_token")?.value;
+
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+
+    const body = await request.json();
+
+    const apiUrl = `${API_URL}/api/projects/${projectId}/stages/2`;
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return NextResponse.json(
+        { detail: errorText || "Failed to save stage 2" },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Stage 2 save error:", error);
+    return NextResponse.json(
+      { detail: "An error occurred while saving stage 2" },
+      { status: 500 }
+    );
+  }
+}

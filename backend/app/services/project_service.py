@@ -362,9 +362,6 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
         except (json.JSONDecodeError, KeyError) as e:
             raise HTTPException(status_code=500, detail=f"Invalid response format from agent: {str(e)}")
 
-    # Keep old name as alias
-    process_stage_2 = process_stage_3
-
     # =====================================================================
     # Stage 4: Ideate - Generate product ideas (was Stage 3)
     # =====================================================================
@@ -478,9 +475,6 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
             return next(s for s in updated_project.stages if s.stage_number == 4)
         except (json.JSONDecodeError, KeyError) as e:
             raise HTTPException(status_code=500, detail=f"Invalid response format from agent: {str(e)}")
-
-    # Keep old name as alias
-    process_stage_3 = process_stage_4
 
     # =====================================================================
     # Stage 5: Evaluate - User feedback + chosen solution

@@ -318,6 +318,16 @@ function ResearchContent() {
         throw new Error("No analysis data received from the server");
       }
 
+      // Explicitly save stage 2 as completed to ensure backend state is correct
+      await fetch(`/api/projects/${projectId}/stages/2`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: { analysis: streamedAnalysis },
+          status: "completed",
+        }),
+      });
+
       localStorage.setItem(
         `project_${projectId}_upload_state`,
         JSON.stringify({
