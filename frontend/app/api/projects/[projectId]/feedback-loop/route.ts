@@ -5,8 +5,7 @@ export const dynamic = "force-dynamic";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-// Stage 1 no longer generates analysis. Redirect to stage 2 streaming endpoint.
-// This route is kept for backward compatibility.
+// Feedback loop - SSE streaming
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
@@ -16,44 +15,36 @@ export async function POST(
     const accessToken = (await cookies()).get("access_token")?.value;
 
     if (!accessToken) {
-      return NextResponse.json(
-        { detail: "Authentication required" },
-        { status: 401 }
-      );
+      return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
     }
 
+    const body = await request.json();
     const modelType = request.headers.get("X-Model-Type");
-    // Redirect to the new stage 2 streaming endpoint
-    const apiUrl = `${API_URL}/api/projects/${projectId}/stages/2/generate/stream`;
 
     const fetchHeaders: HeadersInit = {
+      "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
     };
-    if (modelType) {
-      fetchHeaders["X-Model-Type"] = modelType;
-    }
+    if (modelType) fetchHeaders["X-Model-Type"] = modelType;
 
+    const apiUrl = `${API_URL}/api/projects/${projectId}/feedback-loop`;
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: fetchHeaders,
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
       try {
         const errorData = JSON.parse(errorText);
-        return NextResponse.json(
-          { detail: errorData.detail || "Failed to generate analysis" },
-          { status: response.status }
-        );
+        return NextResponse.json({ detail: errorData.detail || "Failed to start feedback loop" }, { status: response.status });
       } catch {
-        return NextResponse.json(
-          { detail: errorText || "Failed to generate analysis" },
-          { status: response.status }
-        );
+        return NextResponse.json({ detail: errorText }, { status: response.status });
       }
     }
 
+    // Stream through to client
     return new Response(response.body, {
       status: 200,
       headers: {
@@ -63,10 +54,7 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error("Analysis generation error:", error);
-    return NextResponse.json(
-      { detail: "An error occurred while generating the analysis" },
-      { status: 500 }
-    );
+    console.error("Feedback loop error:", error);
+    return NextResponse.json({ detail: "An error occurred during feedback loop" }, { status: 500 });
   }
 }

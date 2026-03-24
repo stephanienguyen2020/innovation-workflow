@@ -1,104 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+// Stage 4: Ideate - generate product ideas
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    // Get the project ID from the URL
     const { projectId } = await params;
-
-    // Get solution ID from the query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const solutionId = searchParams.get("solutionId");
-
-    if (!solutionId) {
-      return NextResponse.json(
-        { detail: "Solution ID is required" },
-        { status: 400 }
-      );
-    }
-
-    console.log(
-      `Generating stage 4 data for project ID: ${projectId} with solution ID: ${solutionId}`
-    );
-
-    // Get the access token from cookies for authentication
     const accessToken = (await cookies()).get("access_token")?.value;
 
-    // Set up headers
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-    };
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
 
-    // Add authorization header if token exists
-    if (accessToken) {
-      headers["Authorization"] = `Bearer ${accessToken}`;
+    const modelType = request.headers.get("X-Model-Type");
+    if (modelType) headers["X-Model-Type"] = modelType;
+
+    // Forward query parameters (selected_problem_id or custom_problem)
+    const url = new URL(request.url);
+    const selectedProblemId = url.searchParams.get("selected_problem_id");
+    const customProblem = url.searchParams.get("custom_problem");
+
+    let apiUrl = `${API_URL}/api/projects/${projectId}/stages/4/generate`;
+    const queryParams = new URLSearchParams();
+
+    if (selectedProblemId) {
+      queryParams.append("selected_problem_id", selectedProblemId);
+    }
+    if (customProblem) {
+      queryParams.append("custom_problem", customProblem);
+    }
+    if (queryParams.toString()) {
+      apiUrl += `?${queryParams.toString()}`;
     }
 
-    const apiUrl = `${API_URL}/api/projects/${projectId}/stages/4/generate?chosen_solution_id=${solutionId}`;
-    console.log(`Calling backend API at: ${apiUrl}`);
+    const response = await fetch(apiUrl, { method: "POST", headers });
 
-    // Call the backend API to generate stage 4 data
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers,
-    });
-
-    console.log("Backend response status:", response.status);
-
-    // Parse the response
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Failed to generate stage 4 data:", errorText);
-
       try {
-        // Try to parse as JSON
         const errorData = JSON.parse(errorText);
         return NextResponse.json(
-          { detail: errorData.detail || "Failed to generate report" },
+          { detail: errorData.detail || "Failed to generate product ideas" },
           { status: response.status }
         );
-      } catch (e) {
-        // If not JSON, return the raw text
+      } catch {
         return NextResponse.json(
-          { detail: errorText || "Failed to generate report" },
+          { detail: errorText || "Failed to generate product ideas" },
           { status: response.status }
         );
       }
     }
 
-    // Get the raw response
-    const responseText = await response.text();
-    console.log("Raw response from backend:", responseText);
-
-    try {
-      // Parse as JSON
-      const data = JSON.parse(responseText);
-
-      // Log everything for debugging
-      console.log("FULL RESPONSE DATA:", JSON.stringify(data, null, 2));
-
-      // Return exactly as received
-      return NextResponse.json(data);
-    } catch (parseError) {
-      console.error("Error parsing JSON response:", parseError);
-
-      // If we can't parse as JSON, return the raw text
-      return NextResponse.json(
-        { detail: "Invalid response format from backend" },
-        { status: 500 }
-      );
-    }
+    const data = await response.json();
+    return NextResponse.json(data);
   } catch (error) {
-    console.error("Stage 4 generation error:", error);
+    console.error("Stage 4 generate error:", error);
     return NextResponse.json(
-      { detail: "An error occurred while generating the report" },
+      { detail: "An error occurred while generating product ideas" },
       { status: 500 }
     );
   }

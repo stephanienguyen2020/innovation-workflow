@@ -1,73 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+// Stage 2: Understand - fetch analysis data
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    // Get the project ID from the URL
     const { projectId } = await params;
-    console.log(`Fetching problem statements for project ID: ${projectId}`);
-
-    // Get the access token from cookies for authentication
     const accessToken = (await cookies()).get("access_token")?.value;
 
-    // Set up headers
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-    };
-
-    // Add authorization header if token exists
-    if (accessToken) {
-      headers["Authorization"] = `Bearer ${accessToken}`;
-    }
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
 
     const apiUrl = `${API_URL}/api/projects/${projectId}/stages/2`;
-    console.log(`Calling backend API at: ${apiUrl}`);
+    const response = await fetch(apiUrl, { method: "GET", headers });
 
-    // Call the backend API to fetch problem statements
-    const response = await fetch(apiUrl, {
-      method: "GET",
-      headers,
-    });
-
-    console.log("Backend response status:", response.status);
-
-    // Parse the response
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Failed to fetch problem statements:", errorText);
-
       try {
-        // Try to parse as JSON
         const errorData = JSON.parse(errorText);
         return NextResponse.json(
-          { detail: errorData.detail || "Failed to fetch problem statements" },
+          { detail: errorData.detail || "Failed to fetch stage 2 data" },
           { status: response.status }
         );
-      } catch (e) {
-        // If not JSON, return the raw text
+      } catch {
         return NextResponse.json(
-          { detail: errorText || "Failed to fetch problem statements" },
+          { detail: errorText || "Failed to fetch stage 2 data" },
           { status: response.status }
         );
       }
     }
 
     const data = await response.json();
-    console.log("Backend problem statements raw data:", data);
-
-    // Return the response from the backend
     return NextResponse.json(data);
   } catch (error) {
-    console.error("Problem statements fetch error:", error);
+    console.error("Stage 2 fetch error:", error);
     return NextResponse.json(
-      { detail: "An error occurred while fetching problem statements" },
+      { detail: "An error occurred while fetching stage 2 data" },
       { status: 500 }
     );
   }

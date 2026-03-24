@@ -1,153 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+// Stage 3: Analysis - generate problem statements
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    // Get the project ID from the URL
     const { projectId } = await params;
-    console.log(`Processing stage 3 for project ID: ${projectId}`);
-
-    // Get the access token from cookies for authentication
     const accessToken = (await cookies()).get("access_token")?.value;
 
-    // Set up headers
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-    };
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
 
-    // Add authorization header if token exists
-    if (accessToken) {
-      headers["Authorization"] = `Bearer ${accessToken}`;
-    }
-
-    // Forward model selection header
     const modelType = request.headers.get("X-Model-Type");
-    if (modelType) {
-      headers["X-Model-Type"] = modelType;
-    }
+    if (modelType) headers["X-Model-Type"] = modelType;
 
-    // Extract the exact query parameters that need to be passed
-    const url = new URL(request.url);
-    const selectedProblemId = url.searchParams.get("selected_problem_id");
-    const customProblem = url.searchParams.get("custom_problem");
+    const apiUrl = `${API_URL}/api/projects/${projectId}/stages/3/generate`;
+    const response = await fetch(apiUrl, { method: "POST", headers });
 
-    console.log("URL parameters received:", {
-      selected_problem_id: selectedProblemId,
-      custom_problem: customProblem,
-      url: url.toString(),
-    });
-
-    // Validation checks - match exactly what the backend expects
-    if (!selectedProblemId && !customProblem) {
-      return NextResponse.json(
-        { detail: "Must provide either selected_problem_id or custom_problem" },
-        { status: 400 }
-      );
-    }
-
-    if (selectedProblemId && customProblem) {
-      return NextResponse.json(
-        {
-          detail: "Cannot provide both selected_problem_id and custom_problem",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Build the backend URL with the same query parameters
-    let apiUrl = `${API_URL}/api/projects/${projectId}/stages/3/generate`;
-    const queryParams = new URLSearchParams();
-
-    if (selectedProblemId) {
-      queryParams.append("selected_problem_id", selectedProblemId);
-      console.log(
-        `Passing selected_problem_id to backend: ${selectedProblemId}`
-      );
-    }
-
-    if (customProblem) {
-      queryParams.append("custom_problem", customProblem);
-      console.log(`Passing custom_problem to backend: ${customProblem}`);
-    }
-
-    if (queryParams.toString()) {
-      apiUrl += `?${queryParams.toString()}`;
-    }
-
-    console.log(`Calling backend endpoint: ${apiUrl}`);
-
-    // Call the backend API with POST but no body - exactly how the backend expects it
-    const backendResponse = await fetch(apiUrl, {
-      method: "POST",
-      headers,
-      // No body needed - backend expects query parameters
-    });
-
-    console.log("Backend response status:", backendResponse.status);
-
-    // Handle the backend response based on status
-    if (!backendResponse.ok) {
-      let errorDetail;
+    if (!response.ok) {
+      const errorText = await response.text();
       try {
-        const responseText = await backendResponse.text();
-        console.error("Error response text:", responseText);
-
-        if (responseText && responseText.trim()) {
-          try {
-            const errorData = JSON.parse(responseText);
-            errorDetail = errorData.detail || `Error ${backendResponse.status}`;
-          } catch (parseError) {
-            errorDetail = responseText;
-          }
-        } else {
-          errorDetail = `Backend returned ${backendResponse.status} with no content`;
-        }
-      } catch (e) {
-        errorDetail = `Error ${backendResponse.status}`;
+        const errorData = JSON.parse(errorText);
+        return NextResponse.json(
+          { detail: errorData.detail || "Failed to generate problem statements" },
+          { status: response.status }
+        );
+      } catch {
+        return NextResponse.json(
+          { detail: errorText || "Failed to generate problem statements" },
+          { status: response.status }
+        );
       }
-
-      console.error("Error detail:", errorDetail);
-      return NextResponse.json(
-        { detail: errorDetail },
-        { status: backendResponse.status }
-      );
     }
 
-    // Handle successful response
-    try {
-      const responseText = await backendResponse.text();
-      console.log(
-        "Success response preview:",
-        responseText.substring(0, 200) + "..."
-      );
-
-      if (!responseText || !responseText.trim()) {
-        return NextResponse.json({
-          success: true,
-          message: "Request was successful but returned no data",
-        });
-      }
-
-      const data = JSON.parse(responseText);
-      return NextResponse.json(data);
-    } catch (parseError) {
-      console.error("Error parsing successful response:", parseError);
-      return NextResponse.json(
-        { detail: "The server returned an invalid response format" },
-        { status: 500 }
-      );
-    }
+    const data = await response.json();
+    return NextResponse.json(data);
   } catch (error) {
-    console.error("Stage 3 processing error:", error);
+    console.error("Stage 3 generate error:", error);
     return NextResponse.json(
-      { detail: "An error occurred while processing stage 3" },
+      { detail: "An error occurred while generating problem statements" },
       { status: 500 }
     );
   }

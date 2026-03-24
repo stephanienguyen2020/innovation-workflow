@@ -1,5 +1,6 @@
 class ProjectPrompts:
-    STAGE_1_ANALYSIS = """
+    # Stage 2: Understand - AI summarization/analysis (was Stage 1)
+    STAGE_2_UNDERSTAND = """
 {{% chat role="system" %}}
 You are an expert product designer and user researcher who understands user problems and their contexts.
 You analyze documents and interviews to identify relevant insights and problems specific to the domain they relate to.
@@ -66,7 +67,11 @@ Return ONLY valid JSON in this exact format:
 - Match your analysis to what the document actually contains
 """
 
-    STAGE_2_PROBLEMS = """
+    # Keep old name as alias for backward compatibility during transition
+    STAGE_1_ANALYSIS = STAGE_2_UNDERSTAND
+
+    # Stage 3: Analysis - problem definition (was Stage 2)
+    STAGE_3_ANALYSIS = """
 {{% chat role="system" %}}
 You are a senior product designer and design strategist working on Innovation Workflow.
 Your expertise lies in translating user research insights into actionable problem statements that drive product innovation.
@@ -126,7 +131,7 @@ class ProblemStatement:
     problem: str  # Clear, human-centered problem statement answering: who, what problem, why it happens, why it matters
     explanation: str  # Design rationale including user impact, business value, and implementation considerations
 
-class Stage2Output:
+class Stage3Output:
     problem_statements: List[ProblemStatement]  # Exactly 5 prioritized problem statements
 
 **DESIGN THINKING CRITERIA**:
@@ -159,7 +164,11 @@ Return ONLY valid JSON matching the Pydantic model structure above:
 }}
     """
 
-    STAGE_3_IDEAS = """
+    # Keep old name as alias
+    STAGE_2_PROBLEMS = STAGE_3_ANALYSIS
+
+    # Stage 4: Ideate - generate solutions (was Stage 3)
+    STAGE_4_IDEATE = """
 {{% chat role="system" %}}
 You are a senior product designer and innovation strategist specializing in {problem_domain}.
 You excel at transforming user problems into breakthrough product concepts using design thinking, lean startup methodology, and human-centered design principles.
@@ -230,7 +239,7 @@ Your explanation should be structured as follows, with each section clearly sepa
 
 **Competitive Advantage**: What unique value does this offer that differentiates it from existing solutions in the {problem_domain} space?
 
-**Implementation Roadmap**: How would this be developed and launched? Outline the phased approach (MVP → Full Product).
+**Implementation Roadmap**: How would this be developed and launched? Outline the phased approach (MVP -> Full Product).
 
 IMPORTANT: Ensure each section header (**Section Name**:) is followed by a line break, and add a blank line between each section for proper formatting.
 
@@ -258,7 +267,7 @@ Return ONLY valid JSON matching the Pydantic model structure above, in this form
     "product_ideas": [
         {{
             "idea": "ProductName: One-sentence value proposition that captures the essence",
-            "detailed_explanation": "**Design Description**: Succinct description of what the product is and how it works\\n\\n**Potential Technologies & Implementation**: Technologies and implementation approach\\n\\n**User Interaction**: How users would interact with and experience the product\\n\\n**Why It Could Be Successful**: Clear explanation of why this idea addresses the problem and could succeed\\n\\n**Target Users**: Primary user personas and use cases\\n\\n**Competitive Advantage**: Unique value proposition and differentiation\\n\\n**Implementation Roadmap**: Phased development strategy (MVP → Full Product)"
+            "detailed_explanation": "**Design Description**: Succinct description of what the product is and how it works\\n\\n**Potential Technologies & Implementation**: Technologies and implementation approach\\n\\n**User Interaction**: How users would interact with and experience the product\\n\\n**Why It Could Be Successful**: Clear explanation of why this idea addresses the problem and could succeed\\n\\n**Target Users**: Primary user personas and use cases\\n\\n**Competitive Advantage**: Unique value proposition and differentiation\\n\\n**Implementation Roadmap**: Phased development strategy (MVP -> Full Product)"
         }},
         {{
             "idea": "Second ProductName: One-sentence value proposition",
@@ -278,7 +287,11 @@ IMPORTANT:
 4. Make the generation practical and focused — each idea should clearly and directly address the identified problem. Make this generation as concise as possible while covering all required sections.
 """
 
-    STAGE_3_IDEAS_ITERATION = """
+    # Keep old name as alias
+    STAGE_3_IDEAS = STAGE_4_IDEATE
+
+    # Stage 4 iteration: improve a single idea based on user feedback
+    STAGE_4_IDEATE_ITERATION = """
 {{% chat role="system" %}}
 You are a senior product designer and innovation strategist specializing in {problem_domain}.
 You excel at iterating on product ideas based on user feedback and research insights to create improved, user-preferred solutions.
@@ -371,28 +384,32 @@ IMPORTANT:
 3. Make this generation as concise as possible — directly address the feedback and clearly explain how the improvement resolves the issues raised.
 """
 
-    STAGE_4_FINAL = """
+    # Keep old name as alias
+    STAGE_3_IDEAS_ITERATION = STAGE_4_IDEATE_ITERATION
+
+    # Comprehensive final report
+    STAGE_FINAL_REPORT = """
 {{% chat role="system" %}}
 You are a senior design strategist and product manager creating a comprehensive innovation report for stakeholders.
 Your goal is to synthesize all research and ideation work into a compelling, actionable document that guides product development decisions.
 {{% endchat %}}
 
-📋 **MISSION**: Create a professional Innovation Workflow Report that transforms raw insights into a strategic roadmap for product innovation in the {problem_domain} space.
+**MISSION**: Create a professional Innovation Workflow Report that transforms raw insights into a strategic roadmap for product innovation in the {problem_domain} space.
 
-🎯 **REPORT OBJECTIVES**:
+**REPORT OBJECTIVES**:
 - Provide executive summary of innovation opportunities
-- Present evidence-based design challenges and solutions  
+- Present evidence-based design challenges and solutions
 - Offer clear recommendations for product development priorities
 - Enable data-driven decision making for product teams
 
-📊 **SYNTHESIS REQUIREMENTS**:
+**SYNTHESIS REQUIREMENTS**:
 Transform the research and ideation work into a comprehensive strategic document:
 
 **REPORT STRUCTURE**:
 Generate a professional document with the following sections:
 
 1. **Executive Summary**: Key insights and strategic recommendations
-2. **Market Context**: {problem_domain} landscape and opportunities  
+2. **Market Context**: {problem_domain} landscape and opportunities
 3. **Research Insights**: User needs and behavioral patterns discovered
 4. **Design Challenges**: Prioritized problems with design rationale
 5. **Product Concepts**: Detailed innovation roadmap with concepts
@@ -418,20 +435,18 @@ Chosen Solution: {chosen_solution}
              "title": "{problem_domain} Innovation Analysis",
              "sections": {{
                  "domain_context": "Overview of the {problem_domain} context",
-                 "analysis_summary": "Comprehensive analysis from Stage 1",
+                 "analysis_summary": "Comprehensive analysis from Stage 2",
                  "problem_statements": [
                      {{
                          "problem": "Problem statement",
                          "explanation": "Detailed explanation"
                      }}
-                     // ... all problems
                  ],
                  "product_ideas": [
                      {{
                          "idea": "Product idea",
                          "detailed_explanation": "Complete explanation"
                      }}
-                     // ... all ideas
                  ]
              }},
              "conclusion": "Summary of the entire workflow and next steps in {problem_domain} context"
@@ -444,3 +459,48 @@ Chosen Solution: {chosen_solution}
 - Maintain consistent professional formatting and clear information hierarchy
 - Focus on actionable intelligence that drives product development decisions
     """
+
+    # Keep old name as alias
+    STAGE_4_FINAL = STAGE_FINAL_REPORT
+
+    # Feedback loop context: prepended to prompts when re-running stages 2-4 with feedback
+    FEEDBACK_LOOP_CONTEXT = """
+**ITERATION CONTEXT**: This is iteration {iteration_number} of the innovation workflow.
+The user evaluated the previous iteration's outputs and provided the following feedback:
+
+--- FEEDBACK ---
+{feedback_text}
+--- END FEEDBACK ---
+
+Previous iteration's output for this stage:
+{previous_output}
+
+Please carefully incorporate this feedback to improve the outputs. Specifically address the critique points raised.
+Do NOT simply repeat the previous output — make meaningful improvements based on the feedback.
+
+"""
+
+    # Per-stage report generation
+    STAGE_REPORT_TEMPLATE = """
+{{% chat role="system" %}}
+You are a professional report writer creating a standalone stage summary for an innovation workflow.
+{{% endchat %}}
+
+Generate a professional standalone report for the "{stage_name}" stage of the innovation workflow.
+
+**Domain**: {problem_domain}
+**Stage**: {stage_name} (Stage {stage_number} of 5)
+**Iteration**: {iteration_number}
+
+**Stage Data**:
+{stage_data}
+
+Create a structured report including:
+1. **Executive Summary**: Key outputs and findings from this stage (2-3 sentences)
+2. **Detailed Findings**: The main content and results produced in this stage
+3. **Key Decisions**: Any choices or selections made
+4. **Recommendations**: Suggestions for the next stage
+
+Return the report as plain text with markdown formatting for section headers.
+Keep it concise but thorough (300-500 words).
+"""

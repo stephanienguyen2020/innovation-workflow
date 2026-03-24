@@ -23,6 +23,14 @@ const nextConfig = {
     parallelServerBuildTraces: true,
     parallelServerCompiles: true,
   },
+  async redirects() {
+    return [
+      // Redirect old workflow paths to new ones
+      { source: "/workflow/upload", destination: "/workflow/research", permanent: true },
+      { source: "/workflow/problem", destination: "/workflow/analysis", permanent: true },
+      { source: "/workflow/ideas", destination: "/workflow/ideate", permanent: true },
+    ];
+  },
   async rewrites() {
     return [
       // Direct auth routes

@@ -1,87 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+
+export const dynamic = "force-dynamic";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-// This function fetches the complete project data and formats it for the report.
-async function getFormattedReportData(projectId: string, accessToken: string) {
-  const projectResponse = await fetch(`${API_URL}/api/projects/${projectId}`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!projectResponse.ok) {
-    throw new Error("Failed to fetch project data");
-  }
-
-  const project = await projectResponse.json();
-
-  // Extract data from each stage
-  const stage1Data = project.stages.find(
-    (s: any) => s.stage_number === 1
-  )?.data;
-  const stage2Data = project.stages.find(
-    (s: any) => s.stage_number === 2
-  )?.data;
-  const stage4Data = project.stages.find(
-    (s: any) => s.stage_number === 4
-  )?.data;
-
-  if (
-    !stage1Data ||
-    !stage2Data ||
-    !stage4Data ||
-    !stage4Data.chosen_solution
-  ) {
-    throw new Error("Required project data is missing to generate a report");
-  }
-
-  // Find the chosen problem statement from stage 2 (check both generated and custom problems)
-  const allProblems = [
-    ...(stage2Data.problem_statements || []),
-    ...(stage2Data.custom_problems || []),
-  ];
-  let chosenProblem = allProblems.find(
-    (p: any) => p.id === stage4Data.chosen_solution.problem_id
-  );
-
-  // Fallback: if problem_id was corrupted, find the real problem via the idea in stage 3
-  if (!chosenProblem) {
-    const stage3Data = project.stages.find(
-      (s: any) => s.stage_number === 3
-    )?.data;
-    if (stage3Data?.product_ideas) {
-      const matchingIdea = stage3Data.product_ideas.find(
-        (idea: any) =>
-          idea.idea === stage4Data.chosen_solution.idea ||
-          idea.id === stage4Data.chosen_solution.id
-      );
-      if (matchingIdea?.problem_id) {
-        chosenProblem = allProblems.find(
-          (p: any) => p.id === matchingIdea.problem_id
-        );
-      }
-    }
-  }
-
-  return {
-    title: `Innovation Report for ${project.problem_domain}`,
-    analysis: stage1Data.analysis,
-    chosen_problem: {
-      statement: chosenProblem?.problem || "Problem not found",
-      explanation: chosenProblem?.explanation || "",
-    },
-    chosen_solution: {
-      idea: stage4Data.chosen_solution.idea,
-      explanation: stage4Data.chosen_solution.detailed_explanation,
-      image_url: stage4Data.chosen_solution.image_url, // Ensure image_url is included
-    },
-  };
-}
-
+// Legacy report endpoint - now proxies to comprehensive-report
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
@@ -92,8 +18,66 @@ export async function GET(
   }
 
   try {
-    const reportData = await getFormattedReportData(projectId, accessToken);
-    return NextResponse.json(reportData);
+    // Try the new comprehensive-report endpoint first
+    const apiUrl = `${API_URL}/api/projects/${projectId}/comprehensive-report`;
+    const response = await fetch(apiUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return NextResponse.json(data);
+    }
+
+    // Fallback: build report from project data (old behavior)
+    const projectResponse = await fetch(`${API_URL}/api/projects/${projectId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!projectResponse.ok) {
+      throw new Error("Failed to fetch project data");
+    }
+
+    const project = await projectResponse.json();
+
+    const stage2Data = project.stages.find((s: any) => s.stage_number === 2)?.data;
+    const stage3Data = project.stages.find((s: any) => s.stage_number === 3)?.data;
+    const stage4Data = project.stages.find((s: any) => s.stage_number === 4)?.data;
+    const stage5Data = project.stages.find((s: any) => s.stage_number === 5)?.data;
+
+    // Find chosen solution (stage 5 first, then fallback to first idea in stage 4)
+    let chosenSolution = stage5Data?.chosen_solution;
+    if (!chosenSolution && stage4Data?.product_ideas?.length > 0) {
+      chosenSolution = stage4Data.product_ideas[0];
+    }
+
+    if (!chosenSolution) {
+      throw new Error("No chosen solution found");
+    }
+
+    // Find the problem
+    const allProblems = [
+      ...(stage3Data?.problem_statements || []),
+      ...(stage3Data?.custom_problems || []),
+    ];
+    const chosenProblem = allProblems.find(
+      (p: any) => p.id === chosenSolution.problem_id
+    );
+
+    return NextResponse.json({
+      title: `Innovation Report for ${project.problem_domain}`,
+      analysis: stage2Data?.analysis || "",
+      chosen_problem: {
+        statement: chosenProblem?.problem || "Problem not found",
+        explanation: chosenProblem?.explanation || "",
+      },
+      chosen_solution: {
+        idea: chosenSolution.idea,
+        explanation: chosenSolution.detailed_explanation,
+        image_url: chosenSolution.image_url,
+      },
+      iteration: project.current_iteration,
+    });
   } catch (error) {
     console.error("Error fetching report data:", error);
     const errorMessage =

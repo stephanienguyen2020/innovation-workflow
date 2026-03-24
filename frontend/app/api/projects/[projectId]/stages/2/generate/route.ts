@@ -1,85 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+// Stage 2: Understand - SSE streaming analysis
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    // Get the project ID from the URL
     const { projectId } = await params;
-    console.log(`Generating problem statements for project ID: ${projectId}`);
 
-    // Get the access token from cookies for authentication
     const accessToken = (await cookies()).get("access_token")?.value;
-
-    // Set up headers
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-    };
-
-    // Add authorization header if token exists
-    if (accessToken) {
-      headers["Authorization"] = `Bearer ${accessToken}`;
+    if (!accessToken) {
+      return NextResponse.json(
+        { detail: "Authentication required" },
+        { status: 401 }
+      );
     }
 
-    // Forward model selection header
     const modelType = request.headers.get("X-Model-Type");
+    const apiUrl = `${API_URL}/api/projects/${projectId}/stages/2/generate/stream`;
+
+    const fetchHeaders: HeadersInit = {
+      Authorization: `Bearer ${accessToken}`,
+    };
     if (modelType) {
-      headers["X-Model-Type"] = modelType;
+      fetchHeaders["X-Model-Type"] = modelType;
     }
 
-    const apiUrl = `${API_URL}/api/projects/${projectId}/stages/2/generate`;
-    console.log(`Calling backend to generate problem statements at: ${apiUrl}`);
-
-    // Call the backend API to generate problem statements
     const response = await fetch(apiUrl, {
       method: "POST",
-      headers,
+      headers: fetchHeaders,
     });
 
-    console.log("Backend problem-generate response status:", response.status);
-
-    // Check if response type is JSON
-    const contentType = response.headers.get("content-type");
-    console.log("Response content type:", contentType);
-
-    // Parse the response
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Problem statements generation failed:", errorText);
-
       try {
-        // Try to parse as JSON
         const errorData = JSON.parse(errorText);
         return NextResponse.json(
-          {
-            detail: errorData.detail || "Failed to generate problem statements",
-          },
+          { detail: errorData.detail || "Failed to generate analysis" },
           { status: response.status }
         );
-      } catch (e) {
-        // If not JSON, return the raw text
+      } catch {
         return NextResponse.json(
-          { detail: errorText || "Failed to generate problem statements" },
+          { detail: errorText || "Failed to generate analysis" },
           { status: response.status }
         );
       }
     }
 
-    const data = await response.json();
-    console.log("Backend problem statements generation raw data:", data);
-
-    // Return the response from the backend without modification
-    return NextResponse.json(data);
+    return new Response(response.body, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error) {
-    console.error("Problem statements generation error:", error);
+    console.error("Stage 2 analysis error:", error);
     return NextResponse.json(
-      { detail: "An error occurred while generating problem statements" },
+      { detail: "An error occurred while generating the analysis" },
       { status: 500 }
     );
   }

@@ -48,7 +48,7 @@ steps:
       - '--max-instances=5'
       - '--port=8000'
       - '--set-env-vars=ENVIRONMENT=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,FIRESTORE_DATABASE=${_FIRESTORE_DATABASE}'
-      - '--set-secrets=GEMINI_API_KEY=gemini-api-key:latest,CLAUDE_API_KEY=claude-api-key:latest,OPENAI_API_KEY=openai-api-key:latest,JWT_SECRET=jwt-secret:latest,SECRET_KEY=secret-key:latest,ADMIN_EMAIL=admin-email:latest,ADMIN_PASSWORD=admin-password:latest'
+      - '--set-secrets=GEMINI_API_KEY=gemini-api-key:latest,CLAUDE_API_KEY=claude-api-key:latest,OPENAI_API_KEY=openai-api-key:latest,JWT_SECRET=jwt-secret:latest,SECRET_KEY=secret-key:latest,ADMIN_EMAIL=admin-email:latest,ADMIN_PASSWORD=admin-password:latest,EMAIL_USERNAME=email-username:latest,EMAIL_PASSWORD=email-password:latest,FROM_EMAIL=from-email:latest'
     id: 'deploy-backend'
     waitFor: ['push-backend']
 
