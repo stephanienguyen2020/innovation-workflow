@@ -19,6 +19,16 @@ interface ProductIdea {
   image_url?: string;
 }
 
+function stripMarkdown(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/`/g, "")
+    .replace(/#/g, "")
+    .trim();
+}
+
 function EvaluateContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -272,7 +282,9 @@ function EvaluateContent() {
                 style={{ aspectRatio: "16/9" }}
               />
             )}
-            <p className="text-gray-700">{chosenSolution.detailed_explanation?.substring(0, 300)}...</p>
+            <p className="text-gray-700 leading-relaxed">
+              {stripMarkdown(chosenSolution.detailed_explanation)?.substring(0, 300)}...
+            </p>
           </div>
         )}
 
