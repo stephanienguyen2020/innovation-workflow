@@ -41,11 +41,8 @@ function EvaluateContent() {
   const [error, setError] = useState<string | null>(null);
   const [chosenSolution, setChosenSolution] = useState<ProductIdea | null>(null);
   const [allIdeas, setAllIdeas] = useState<ProductIdea[]>([]);
-  const [feedbackText, setFeedbackText] = useState("");
   const [evaluationNotes, setEvaluationNotes] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
-  const [feedbackLoopInProgress, setFeedbackLoopInProgress] = useState(false);
-  const [feedbackLoopProgress, setFeedbackLoopProgress] = useState<string>("");
   const [currentIteration, setCurrentIteration] = useState(1);
 
   useEffect(() => {
@@ -106,83 +103,45 @@ function EvaluateContent() {
   }, [projectId, solutionId]);
 
   const handleSubmitAndIterate = async () => {
-    if (!projectId || !feedbackText.trim()) {
+    if (!projectId || !evaluationNotes.trim()) {
       setError("Please enter feedback before iterating.");
       return;
     }
 
-    setFeedbackLoopInProgress(true);
-    setFeedbackLoopProgress("Starting feedback loop...");
+    if (!chosenSolution) {
+      setError("Please select a solution to give feedback on.");
+      return;
+    }
+
+    setIsSubmittingFeedback(true);
     setError(null);
 
     try {
-      // First, save the feedback to stage 5
+      // Save the feedback + chosen solution to stage 5
       await fetch(`/api/projects/${projectId}/stages/5/submit-feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          feedback_entries: [{ feedback_text: feedbackText, timestamp: new Date().toISOString() }],
+          feedback_entries: [{ feedback_text: evaluationNotes, timestamp: new Date().toISOString() }],
           evaluation_notes: evaluationNotes,
-          chosen_solution_id: chosenSolution?.id,
+          chosen_solution_id: chosenSolution.id,
         }),
       });
 
-      // Trigger the feedback loop (SSE stream)
-      const response = await fetch(`/api/projects/${projectId}/feedback-loop`, {
+      // Save iteration snapshot (feedback + chosen solution, no re-analysis)
+      await fetch(`/api/projects/${projectId}/save-iteration`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Model-Type": model,
-        },
-        body: JSON.stringify({ feedback_text: feedbackText }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          feedback_text: evaluationNotes,
+        }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to start feedback loop");
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("Streaming not supported");
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let eventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (eventType === "progress") {
-                setFeedbackLoopProgress(data.message || "Processing...");
-              } else if (eventType === "done") {
-                setFeedbackLoopProgress("Complete! Redirecting...");
-                setTimeout(() => {
-                  router.push(`/workflow/understand?projectId=${projectId}`);
-                }, 1500);
-                return;
-              } else if (eventType === "error") {
-                throw new Error(data.message || "Feedback loop failed");
-              }
-            } catch (parseErr) {
-              if (eventType === "error") throw parseErr;
-            }
-          }
-        }
-      }
+      // Redirect immediately to research/understand page
+      router.push(`/workflow/research?projectId=${projectId}`);
     } catch (err) {
-      setError((err as Error).message || "Feedback loop failed");
-      setFeedbackLoopInProgress(false);
+      setError((err as Error).message || "Failed to save feedback");
+      setIsSubmittingFeedback(false);
     }
   };
 
@@ -225,20 +184,6 @@ function EvaluateContent() {
 
   return (
     <div className="min-h-screen p-6 flex flex-col max-w-6xl mx-auto">
-      {/* Feedback loop overlay */}
-      {feedbackLoopInProgress && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]">
-          <div className="bg-white rounded-2xl p-8 max-w-md mx-4 text-center shadow-2xl">
-            <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-6" />
-            <h3 className="text-xl font-semibold mb-2">Feedback Loop in Progress</h3>
-            <p className="text-gray-600 mb-4">{feedbackLoopProgress}</p>
-            <p className="text-sm text-gray-400">
-              Re-running Understand, Analysis, and Ideate stages with your feedback...
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="text-center space-y-4 mb-12">
         <h1 className="text-4xl md:text-6xl font-bold">Innovation Workflow</h1>
@@ -321,20 +266,6 @@ function EvaluateContent() {
           />
         </div>
 
-        {/* Feedback for Iteration */}
-        <div className="space-y-3">
-          <h3 className="text-2xl font-semibold">Feedback for Next Iteration</h3>
-          <p className="text-gray-600">
-            Enter feedback to improve the analysis and ideas. This will re-run stages 2-4 with your feedback.
-          </p>
-          <textarea
-            value={feedbackText}
-            onChange={(e) => setFeedbackText(e.target.value)}
-            placeholder="What would you like to improve? Be specific about what should change in the analysis, problems, or ideas..."
-            className="w-full h-40 p-4 border rounded-lg resize-none"
-          />
-        </div>
-
         {/* Iteration History */}
         <IterationHistory projectId={projectId || ""} currentIteration={currentIteration} />
 
@@ -351,19 +282,22 @@ function EvaluateContent() {
 
           <button
             onClick={handleSubmitAndIterate}
-            disabled={!feedbackText.trim() || feedbackLoopInProgress || isSubmittingFeedback}
-            className={`bg-gray-800 text-white px-8 py-3 rounded-[10px] text-lg font-medium
+            disabled={!evaluationNotes.trim() || isSubmittingFeedback}
+            className={`text-white px-8 py-3 rounded-[10px] text-lg font-medium
                      hover:opacity-90 transition-opacity inline-flex items-center gap-2
-                     ${!feedbackText.trim() || feedbackLoopInProgress ? "opacity-50 cursor-not-allowed" : ""}`}
+                     ${evaluationNotes.trim() && !isSubmittingFeedback ? "bg-[#001DFA]" : "bg-gray-500 opacity-50 cursor-not-allowed"}`}
           >
-            <RotateCcw className="w-4 h-4" />
-            Submit Feedback & Re-iterate
+            {isSubmittingFeedback ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
+            ) : (
+              <><RotateCcw className="w-4 h-4" /> Submit Feedback & Re-iterate</>
+            )}
           </button>
 
           <button
             onClick={handleFinalize}
-            disabled={!chosenSolution || isSubmittingFeedback || feedbackLoopInProgress}
-            className={`bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-lg font-medium
+            disabled={!chosenSolution || isSubmittingFeedback}
+            className={`bg-green-600 text-white px-8 py-3 rounded-[10px] text-lg font-medium
                      hover:opacity-90 transition-opacity inline-flex items-center gap-2
                      ${!chosenSolution || isSubmittingFeedback ? "opacity-50 cursor-not-allowed" : ""}`}
           >

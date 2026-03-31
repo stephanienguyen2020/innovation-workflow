@@ -15,12 +15,11 @@ export default function PastProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
-    null
-  );
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
-    null
-  );
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<SortField>("updated_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -55,6 +54,35 @@ export default function PastProjectsPage() {
     });
   }, [projects, searchQuery, sortField, sortDirection]);
 
+  const allVisibleSelected =
+    filteredAndSortedProjects.length > 0 &&
+    filteredAndSortedProjects.every((p) => selectedIds.has(p.id));
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredAndSortedProjects.forEach((p) => next.delete(p.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredAndSortedProjects.forEach((p) => next.add(p.id));
+        return next;
+      });
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login?redirect=/past");
@@ -65,14 +93,10 @@ export default function PastProjectsPage() {
       try {
         const response = await fetch("/api/projects", {
           method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch projects");
-        }
+        if (!response.ok) throw new Error("Failed to fetch projects");
 
         const data = await response.json();
         setProjects(data);
@@ -84,9 +108,7 @@ export default function PastProjectsPage() {
       }
     };
 
-    if (user) {
-      fetchProjects();
-    }
+    if (user) fetchProjects();
   }, [user, loading, router]);
 
   const formatDate = (dateString: string) => {
@@ -107,22 +129,41 @@ export default function PastProjectsPage() {
 
       const response = await fetch(`/api/projects/${projectId}`, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to delete project");
-      }
+      if (!response.ok) throw new Error("Failed to delete project");
 
-      // Remove the project from the local state
       setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
     } catch (err) {
       console.error("Error deleting project:", err);
       setError("Failed to delete project. Please try again.");
     } finally {
       setDeletingProjectId(null);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    try {
+      setIsDeletingSelected(true);
+      setShowBulkDeleteConfirm(false);
+      await Promise.all(
+        [...selectedIds].map((id) =>
+          fetch(`/api/projects/${id}`, { method: "DELETE" })
+        )
+      );
+      setProjects((prev) => prev.filter((p) => !selectedIds.has(p.id)));
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error("Error deleting selected projects:", err);
+      setError("Failed to delete selected projects. Please try again.");
+    } finally {
+      setIsDeletingSelected(false);
     }
   };
 
@@ -149,8 +190,38 @@ export default function PastProjectsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
+      <div className="mb-8 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Your Past Projects</h1>
+        {selectedIds.size > 0 && (
+          showBulkDeleteConfirm ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">
+                Delete {selectedIds.size} selected project{selectedIds.size > 1 ? "s" : ""}?
+              </span>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={isDeletingSelected}
+                className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-1"
+              >
+                {isDeletingSelected ? <Loader2 className="w-4 h-4 animate-spin" /> : "Yes, delete"}
+              </button>
+              <button
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 border border-red-300 rounded-md hover:bg-red-50 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete {selectedIds.size} selected
+            </button>
+          )
+        )}
       </div>
 
       {projects.length === 0 ? (
@@ -185,6 +256,15 @@ export default function PastProjectsPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded border-gray-300 text-[#001DFA] cursor-pointer"
+                        title="Select all"
+                      />
+                    </th>
                     <th
                       className="px-6 py-3 text-left text-sm font-semibold text-gray-900 cursor-pointer select-none hover:bg-gray-100"
                       onClick={() => toggleSort("problem_domain")}
@@ -216,7 +296,18 @@ export default function PastProjectsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredAndSortedProjects.map((project) => (
-                    <tr key={project.id} className="hover:bg-gray-50">
+                    <tr
+                      key={project.id}
+                      className={`hover:bg-gray-50 ${selectedIds.has(project.id) ? "bg-blue-50" : ""}`}
+                    >
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(project.id)}
+                          onChange={() => toggleSelect(project.id)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#001DFA] cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4">
                         <button
                           onClick={() => router.push(`/project/${project.id}`)}

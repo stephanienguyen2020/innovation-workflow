@@ -324,8 +324,31 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
         enriched_prompt = ProjectPrompts.STAGE_3_ANALYSIS + (
             f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
         )
+
+        # Include feedback history if there are previous iterations
+        feedback_context = ""
+        if project.current_iteration > 1:
+            iterations = await db_get_iteration_history(db, project_id)
+            if iterations:
+                feedback_parts = []
+                for it in iterations:
+                    ft = it.get("feedback_text", "")
+                    chosen = it.get("stages_snapshot", {}).get("5", {}).get("chosen_solution", {})
+                    solution_name = chosen.get("idea", "Unknown") if chosen else "Unknown"
+                    feedback_parts.append(
+                        f"- Iteration {it.get('iteration_number', '?')}: "
+                        f"Solution evaluated: \"{solution_name}\" — Feedback: \"{ft}\""
+                    )
+                feedback_context = (
+                    "\n\n**USER FEEDBACK HISTORY** (from previous iterations — "
+                    "use this to guide which problems are most important and what directions to explore):\n"
+                    + "\n".join(feedback_parts)
+                    + "\n\nPlease generate problem statements that take into account ALL of the above feedback. "
+                    "Prioritize problems that address the user's concerns and desired directions.\n"
+                )
+
         response = await agent_service.generate_json(
-            enriched_prompt,
+            enriched_prompt + feedback_context,
             context={
                 "analysis": analysis,
                 "problem_domain": project.problem_domain
@@ -427,18 +450,56 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
 
         doc_text = await rag_service.get_document_text(project.document_id)
 
-        enriched_prompt = ProjectPrompts.STAGE_4_IDEATE + (
-            f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
-        )
-        response = await agent_service.generate_json(
-            enriched_prompt,
-            context={
-                "analysis": analysis,
-                "problem_statements": [selected_problem],
-                "problem_domain": project.problem_domain
-            },
-            model_id=model_id,
-        )
+        # Check if we have feedback history — if so, generate variations of the chosen solution
+        iterations = await db_get_iteration_history(db, project_id) if project.current_iteration > 1 else []
+        has_feedback = len(iterations) > 0
+
+        if has_feedback:
+            # Get the most recent chosen solution from the latest iteration snapshot
+            latest_iteration = iterations[-1]
+            latest_stage5 = latest_iteration.get("stages_snapshot", {}).get("5", {})
+            original_solution = latest_stage5.get("chosen_solution", {})
+            original_solution_text = json.dumps(original_solution, indent=2) if original_solution else "No previous solution found"
+
+            # Build feedback history string
+            feedback_parts = []
+            for it in iterations:
+                ft = it.get("feedback_text", "")
+                chosen = it.get("stages_snapshot", {}).get("5", {}).get("chosen_solution", {})
+                solution_name = chosen.get("idea", "Unknown") if chosen else "Unknown"
+                feedback_parts.append(
+                    f"- Iteration {it.get('iteration_number', '?')}: "
+                    f"Solution: \"{solution_name}\" — Feedback: \"{ft}\""
+                )
+            feedback_history_text = "\n".join(feedback_parts)
+
+            enriched_prompt = ProjectPrompts.STAGE_4_IDEATE_WITH_FEEDBACK + (
+                f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
+            )
+            response = await agent_service.generate_json(
+                enriched_prompt,
+                context={
+                    "analysis": analysis,
+                    "problem_statements": [selected_problem],
+                    "problem_domain": project.problem_domain,
+                    "original_solution": original_solution_text,
+                    "feedback_history": feedback_history_text,
+                },
+                model_id=model_id,
+            )
+        else:
+            enriched_prompt = ProjectPrompts.STAGE_4_IDEATE + (
+                f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
+            )
+            response = await agent_service.generate_json(
+                enriched_prompt,
+                context={
+                    "analysis": analysis,
+                    "problem_statements": [selected_problem],
+                    "problem_domain": project.problem_domain
+                },
+                model_id=model_id,
+            )
 
         try:
             ideas_data = response if isinstance(response, dict) else json.loads(response)
@@ -447,9 +508,18 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
             if image_service.db is None:
                 image_service.set_db(db)
 
+            valid_ideas = []
             for idea in ideas_data["product_ideas"]:
+                if not idea.get("detailed_explanation"):
+                    logger.warning(f"Skipping idea missing 'detailed_explanation': {idea.get('idea', '(unknown)')}")
+                    continue
                 idea["problem_id"] = selected_problem["id"]
                 idea["id"] = idea.get("id", str(uuid.uuid4()))
+                valid_ideas.append(idea)
+            ideas_data["product_ideas"] = valid_ideas
+
+            if not valid_ideas:
+                raise HTTPException(status_code=500, detail="LLM returned no valid product ideas (all missing 'detailed_explanation')")
 
             async def generate_image_for_idea(idea):
                 try:
@@ -469,9 +539,31 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
                 *[generate_image_for_idea(idea) for idea in ideas_data["product_ideas"]]
             )
 
-            updated_project = await update_stage_4(
-                db, project_id, {"product_ideas": ideas_data["product_ideas"]}
-            )
+            stage_4_data = {"product_ideas": ideas_data["product_ideas"]}
+
+            # If there's feedback history, include original solution and past iterations
+            if has_feedback:
+                # Original solution = the chosen solution from the most recent iteration
+                latest_stage5 = iterations[-1].get("stages_snapshot", {}).get("5", {})
+                orig = latest_stage5.get("chosen_solution")
+                if orig:
+                    stage_4_data["original_solution"] = orig
+
+                # Collect past iterations with ALL their ideas + chosen solution (newest first)
+                past_iterations = []
+                for it in reversed(iterations):
+                    it_stage4 = it.get("stages_snapshot", {}).get("4", {})
+                    it_stage5 = it.get("stages_snapshot", {}).get("5", {})
+                    it_ideas = it_stage4.get("product_ideas", [])
+                    it_chosen = it_stage5.get("chosen_solution")
+                    past_iterations.append({
+                        "iteration_number": it.get("iteration_number"),
+                        "product_ideas": it_ideas,
+                        "chosen_solution": it_chosen,
+                    })
+                stage_4_data["past_iterations"] = past_iterations
+
+            updated_project = await update_stage_4(db, project_id, stage_4_data)
             return next(s for s in updated_project.stages if s.stage_number == 4)
         except (json.JSONDecodeError, KeyError) as e:
             raise HTTPException(status_code=500, detail=f"Invalid response format from agent: {str(e)}")
@@ -552,6 +644,27 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
             None
         )
 
+        # Fetch iteration history for the report
+        iterations = await db_get_iteration_history(db, project_id) if project.current_iteration > 1 else []
+        iteration_history = []
+        for it in iterations:
+            it_stage4 = it.get("stages_snapshot", {}).get("4", {})
+            it_stage5 = it.get("stages_snapshot", {}).get("5", {})
+            it_chosen = it_stage5.get("chosen_solution")
+            iteration_history.append({
+                "iteration_number": it.get("iteration_number"),
+                "feedback_text": it.get("feedback_text", ""),
+                "chosen_solution": {
+                    "idea": it_chosen.get("idea", "") if it_chosen else "",
+                    "explanation": it_chosen.get("detailed_explanation", "") if it_chosen else "",
+                    "image_url": it_chosen.get("image_url") if it_chosen else None,
+                } if it_chosen else None,
+                "all_ideas": [
+                    {"idea": idea.get("idea", ""), "id": idea.get("id", "")}
+                    for idea in it_stage4.get("product_ideas", [])
+                ],
+            })
+
         return {
             "title": f"Innovation Report for {project.problem_domain}",
             "analysis": stage_2.data.get("analysis", "") if stage_2 else "",
@@ -565,6 +678,7 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
                 "image_url": chosen_solution.get("image_url")
             },
             "iteration": project.current_iteration,
+            "iteration_history": iteration_history,
         }
 
     # =====================================================================

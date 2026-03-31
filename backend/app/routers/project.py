@@ -306,6 +306,49 @@ async def trigger_feedback_loop(
 
 
 # =====================================================================
+# Save iteration snapshot (without re-running stages)
+# =====================================================================
+
+@router.post("/{project_id}/save-iteration")
+async def save_iteration(
+    project_id: str = Path(..., description="Project ID"),
+    body: Dict = Body(...),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db),
+) -> Dict:
+    """Save the current state as an iteration snapshot, then reset stages 3-5
+    so problems and ideas get re-generated with feedback context.
+    Keeps stage 1 (research) and stage 2 (analysis) intact."""
+    feedback_text = body.get("feedback_text", "").strip()
+    if not feedback_text:
+        raise HTTPException(status_code=400, detail="Feedback text is required")
+
+    from app.database.query.db_project import save_iteration_snapshot, get_project
+    from app.constant.status import StageStatus
+    from datetime import datetime
+
+    # 1. Snapshot current state (before resetting)
+    new_iteration = await save_iteration_snapshot(db, project_id, feedback_text)
+
+    # 2. Reset stages 3-5 so they get re-generated with feedback
+    project = await get_project(db, project_id)
+    for stage in project.stages:
+        if stage.stage_number >= 3:
+            stage.status = StageStatus.NOT_STARTED
+            stage.data = {}
+            stage.updated_at = datetime.utcnow()
+    project.updated_at = datetime.utcnow()
+
+    stages_data = [s.dict() for s in project.stages]
+    await db.collection("projects").document(project_id).update({
+        "stages": stages_data,
+        "updated_at": project.updated_at,
+    })
+
+    return {"iteration": new_iteration, "message": f"Saved iteration snapshot. Now on iteration {new_iteration}."}
+
+
+# =====================================================================
 # Iteration history
 # =====================================================================
 

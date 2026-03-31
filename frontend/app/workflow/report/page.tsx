@@ -8,6 +8,17 @@ import { Loader2, Download, ArrowLeft, AlertCircle } from "lucide-react";
 import jsPDF from "jspdf";
 import WorkflowProgress from "@/components/WorkflowProgress";
 
+interface IterationEntry {
+  iteration_number: number;
+  feedback_text: string;
+  chosen_solution?: {
+    idea: string;
+    explanation: string;
+    image_url?: string;
+  };
+  all_ideas: Array<{ idea: string; id: string }>;
+}
+
 interface ReportData {
   title: string;
   analysis: string;
@@ -21,6 +32,7 @@ interface ReportData {
     image_url?: string;
   };
   iteration?: number;
+  iteration_history?: IterationEntry[];
 }
 
 function ReportContent() {
@@ -229,6 +241,48 @@ function ReportContent() {
         } catch {}
       }
 
+      // Iteration History
+      if (reportData.iteration_history && reportData.iteration_history.length > 0) {
+        yPos += 15;
+        yPos = checkPageBreak(yPos, 20);
+        pdf.setFontSize(16);
+        pdf.text("ITERATION HISTORY", marginLeft, yPos);
+        yPos += 10;
+
+        for (const entry of reportData.iteration_history) {
+          yPos = checkPageBreak(yPos, 30);
+          pdf.setFontSize(12);
+          pdf.setFont(undefined as unknown as string, "bold");
+          pdf.text(`Iteration ${entry.iteration_number}`, marginLeft, yPos);
+          yPos += 7;
+
+          if (entry.chosen_solution) {
+            pdf.setFontSize(10);
+            pdf.setFont(undefined as unknown as string, "normal");
+            const selectedLines = pdf.splitTextToSize(`Selected: ${entry.chosen_solution.idea}`, maxWidth);
+            yPos = addTextWithPageBreak(selectedLines, yPos, 5, 10);
+            yPos += 3;
+          }
+
+          if (entry.all_ideas.length > 0) {
+            pdf.setFontSize(9);
+            pdf.setFont(undefined as unknown as string, "normal");
+            for (const idea of entry.all_ideas) {
+              yPos = checkPageBreak(yPos, 6);
+              const prefix = entry.chosen_solution && idea.idea === entry.chosen_solution.idea ? "* " : "- ";
+              const ideaLines = pdf.splitTextToSize(`${prefix}${idea.idea}`, maxWidth - 5);
+              yPos = addTextWithPageBreak(ideaLines, yPos, 4.5, 9);
+            }
+            yPos += 3;
+          }
+
+          pdf.setFontSize(10);
+          const feedbackLines = pdf.splitTextToSize(`Feedback: ${entry.feedback_text}`, maxWidth);
+          yPos = addTextWithPageBreak(feedbackLines, yPos, 5, 10);
+          yPos += 10;
+        }
+      }
+
       pdf.save(`innovation_report_${projectId}.pdf`);
       setDownloadSuccess(true);
     } catch (err) {
@@ -354,6 +408,66 @@ function ReportContent() {
               </div>
             </div>
           </div>
+
+          {/* Iteration History */}
+          {reportData.iteration_history && reportData.iteration_history.length > 0 && (
+            <div className="space-y-5">
+              <h3 className="text-2xl font-semibold">Design Process</h3>
+              <div className="relative pl-8">
+                {/* Timeline line */}
+                <div className="absolute left-[11px] top-2 bottom-2 w-px bg-gray-200" />
+
+                <div className="space-y-8">
+                  {/* Final solution — always on top */}
+                  <div className="relative">
+                    <div className="absolute -left-8 top-1 w-[22px] h-[22px] rounded-full bg-blue-600 border-2 border-blue-600 flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-white">{reportData.iteration || 1}</span>
+                    </div>
+                    <p className="text-base font-medium text-blue-700">
+                      {reportData.chosen_solution.idea}
+                      <span className="ml-2 text-xs font-normal text-blue-500">Current</span>
+                    </p>
+                  </div>
+
+                  {/* Past iterations — newest first */}
+                  {[...reportData.iteration_history].reverse().map((entry) => (
+                    <div key={entry.iteration_number} className="relative">
+                      {/* Timeline dot */}
+                      <div className="absolute -left-8 top-1 w-[22px] h-[22px] rounded-full bg-white border-2 border-gray-300 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-gray-500">{entry.iteration_number}</span>
+                      </div>
+
+                      <div className="space-y-3">
+                        {/* Selected solution */}
+                        {entry.chosen_solution && (
+                          <p className="text-base font-medium text-gray-900">
+                            {entry.chosen_solution.idea}
+                          </p>
+                        )}
+
+                        {/* Other ideas considered — full names */}
+                        {entry.all_ideas.filter((idea) => !entry.chosen_solution || idea.idea !== entry.chosen_solution.idea).length > 0 && (
+                          <div className="text-sm text-gray-500 space-y-1">
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Also considered</p>
+                            {entry.all_ideas
+                              .filter((idea) => !entry.chosen_solution || idea.idea !== entry.chosen_solution.idea)
+                              .map((idea) => (
+                                <p key={idea.id} className="text-gray-500">{idea.idea}</p>
+                              ))}
+                          </div>
+                        )}
+
+                        {/* Feedback */}
+                        <div className="text-sm text-gray-600 border-l-2 border-gray-200 pl-4 italic">
+                          {entry.feedback_text}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col items-center justify-center space-y-4">

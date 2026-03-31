@@ -566,33 +566,6 @@ function IdeationContent() {
           </div>
         )}
 
-        {/* Problem Statement Section */}
-        <div className="space-y-2 mb-10">
-          <div className="flex items-start justify-between mb-4">
-            <h3 className="text-4xl font-bold">Problem Statement</h3>
-            <button
-              onClick={() =>
-                router.push(`/workflow/problem?projectId=${projectId}`)
-              }
-              className="bg-black text-white px-6 py-2 rounded-[10px] text-sm font-medium"
-            >
-              Modify Problem
-            </button>
-          </div>
-          <div className="border border-gray-100 rounded-lg p-6 bg-white">
-            <p className="text-xl font-medium mb-3">
-              {problemStatement
-                ? problemStatement.problem
-                : "No problem statement selected"}
-            </p>
-            {problemStatement && problemStatement.explanation && (
-              <p className="text-gray-600 text-lg">
-                {problemStatement.explanation}
-              </p>
-            )}
-          </div>
-        </div>
-
         {/* Research Summary Section */}
         <div className="space-y-2 mb-10">
           <div className="flex items-start justify-between mb-4">
@@ -619,6 +592,33 @@ function IdeationContent() {
               first.
             </p>
           )}
+        </div>
+
+        {/* Problem Statement Section */}
+        <div className="space-y-2 mb-10">
+          <div className="flex items-start justify-between mb-4">
+            <h3 className="text-4xl font-bold">Problem Statement</h3>
+            <button
+              onClick={() =>
+                router.push(`/workflow/problem?projectId=${projectId}`)
+              }
+              className="bg-black text-white px-6 py-2 rounded-[10px] text-sm font-medium"
+            >
+              Modify Problem
+            </button>
+          </div>
+          <div className="border border-gray-100 rounded-lg p-6 bg-white">
+            <p className="text-xl font-medium mb-3">
+              {problemStatement
+                ? problemStatement.problem
+                : "No problem statement selected"}
+            </p>
+            {problemStatement && problemStatement.explanation && (
+              <p className="text-gray-600 text-lg">
+                {problemStatement.explanation}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Generated Ideas Section */}

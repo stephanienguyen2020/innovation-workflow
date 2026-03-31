@@ -57,6 +57,14 @@ function IdeateContent() {
   const [progressPercent, setProgressPercent] = useState(0);
   const [imageFeedback, setImageFeedback] = useState<Record<string, string>>({});
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [originalSolution, setOriginalSolution] = useState<ProductIdea | null>(null);
+  const [pastIterations, setPastIterations] = useState<
+    Array<{
+      iteration_number: number;
+      product_ideas: ProductIdea[];
+      chosen_solution?: ProductIdea;
+    }>
+  >([]);
 
   useEffect(() => {
     if (!projectId) {
@@ -84,6 +92,13 @@ function IdeateContent() {
               if (!problemId && ideasData.data.product_ideas[0].problem_id) {
                 await fetchProblemStatement(ideasData.data.product_ideas[0].problem_id);
               }
+            }
+            // Load original solution and past iterations if present
+            if (ideasData.data.original_solution) {
+              setOriginalSolution(ideasData.data.original_solution);
+            }
+            if (ideasData.data.past_iterations && Array.isArray(ideasData.data.past_iterations)) {
+              setPastIterations(ideasData.data.past_iterations);
             }
           }
         }
@@ -336,27 +351,6 @@ function IdeateContent() {
           </div>
         )}
 
-        {/* Problem Statement Section */}
-        <div className="space-y-2 mb-10">
-          <div className="flex items-start justify-between mb-4">
-            <h3 className="text-4xl font-bold">Problem Statement</h3>
-            <button
-              onClick={() => router.push(`/workflow/analysis?projectId=${projectId}`)}
-              className="bg-black text-white px-6 py-2 rounded-[10px] text-sm font-medium"
-            >
-              Modify Problem
-            </button>
-          </div>
-          <div className="border border-gray-100 rounded-lg p-6 bg-white">
-            <p className="text-xl font-medium mb-3">
-              {problemStatement?.problem || "No problem statement selected"}
-            </p>
-            {problemStatement?.explanation && (
-              <p className="text-gray-600 text-lg">{problemStatement.explanation}</p>
-            )}
-          </div>
-        </div>
-
         {/* Research Summary Section */}
         <div className="space-y-2 mb-10">
           <div className="flex items-start justify-between mb-4">
@@ -378,9 +372,54 @@ function IdeateContent() {
           )}
         </div>
 
-        {/* Generated Ideas Section */}
+        {/* Problem Statement Section */}
         <div className="space-y-2 mb-10">
-          <h3 className="text-4xl font-bold mb-6">Generated Ideas</h3>
+          <div className="flex items-start justify-between mb-4">
+            <h3 className="text-4xl font-bold">Problem Statement</h3>
+            <button
+              onClick={() => router.push(`/workflow/analysis?projectId=${projectId}`)}
+              className="bg-black text-white px-6 py-2 rounded-[10px] text-sm font-medium"
+            >
+              Modify Problem
+            </button>
+          </div>
+          <div className="border border-gray-100 rounded-lg p-6 bg-white">
+            <p className="text-xl font-medium mb-3">
+              {problemStatement?.problem || "No problem statement selected"}
+            </p>
+            {problemStatement?.explanation && (
+              <p className="text-gray-600 text-lg">{problemStatement.explanation}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Original Solution (shown when iterating) */}
+        {originalSolution && (
+          <div className="space-y-2 mb-10">
+            <h3 className="text-4xl font-bold mb-4">Original Solution</h3>
+            <div className="border-2 border-blue-200 rounded-lg p-5 bg-blue-50">
+              <p className="text-lg font-semibold text-blue-900 mb-2">{originalSolution.idea}</p>
+              {originalSolution.image_url && (
+                <img
+                  src={originalSolution.image_url}
+                  alt={originalSolution.idea}
+                  className="w-full max-w-lg h-auto rounded-lg mb-3"
+                  style={{ aspectRatio: "16/9" }}
+                />
+              )}
+              <div
+                className="text-gray-700 text-base leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: formatDetailedExplanation(originalSolution.detailed_explanation || "") }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Generated Ideas / Refined Variations Section */}
+        <div className="space-y-2 mb-10">
+          <h3 className="text-4xl font-bold mb-6">
+            {originalSolution ? "Refined Variations" : "Generated Ideas"}
+          </h3>
           {productIdeas.length > 0 ? (
             <div className="space-y-5">
               {productIdeas.map((idea) => (
@@ -451,6 +490,72 @@ function IdeateContent() {
             <p className="text-gray-500 text-lg py-4">No ideas generated yet. Try regenerating ideas.</p>
           )}
         </div>
+
+        {/* Past Iterations (newest first) */}
+        {pastIterations.length > 0 && (
+          <div className="space-y-2 mb-10">
+            <h3 className="text-4xl font-bold mb-4">Previous Iterations</h3>
+            <div className="space-y-8">
+              {pastIterations.map((pi) => (
+                <div
+                  key={pi.iteration_number}
+                  className="border border-gray-200 rounded-xl overflow-hidden"
+                >
+                  <div className="bg-gray-100 px-5 py-3 flex items-center gap-3">
+                    <span className="text-sm font-bold text-white bg-gray-600 px-3 py-1 rounded-full">
+                      Iteration {pi.iteration_number}
+                    </span>
+                    {pi.chosen_solution && (
+                      <span className="text-sm text-gray-600">
+                        Selected: <strong>{pi.chosen_solution.idea}</strong>
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {pi.product_ideas.map((idea) => {
+                      const isChosen = pi.chosen_solution?.id === idea.id;
+                      return (
+                        <div
+                          key={idea.id}
+                          className={`rounded-lg p-4 ${
+                            isChosen
+                              ? "border-2 border-blue-300 bg-blue-50"
+                              : "border border-gray-100 bg-white"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-base font-semibold text-gray-800">
+                              {idea.idea}
+                            </span>
+                            {isChosen && (
+                              <span className="text-xs font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                                Selected
+                              </span>
+                            )}
+                          </div>
+                          {idea.image_url && (
+                            <img
+                              src={idea.image_url}
+                              alt={idea.idea}
+                              className="w-full max-w-md h-auto rounded-lg mb-3"
+                              style={{ aspectRatio: "16/9" }}
+                            />
+                          )}
+                          <div
+                            className="text-gray-600 text-sm leading-relaxed"
+                            dangerouslySetInnerHTML={{
+                              __html: formatDetailedExplanation(idea.detailed_explanation || ""),
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Bottom Actions */}
         <div className="flex flex-wrap gap-6">

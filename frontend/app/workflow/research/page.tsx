@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import type React from "react";
 import { useState, useEffect, Suspense } from "react";
-import { Upload, Rocket, Loader2 } from "lucide-react";
+import { Upload, Rocket, Loader2, MessageSquare } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useModel } from "@/context/ModelContext";
@@ -47,6 +47,14 @@ function ResearchContent() {
   const [analysis, setAnalysis] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentIteration, setCurrentIteration] = useState(1);
+  const [feedbackEntries, setFeedbackEntries] = useState<
+    Array<{
+      feedback_text: string;
+      iteration_number: number;
+      created_at?: string;
+      chosen_solution?: { idea: string; image_url?: string };
+    }>
+  >([]);
 
   useEffect(() => {
     const projectIdFromUrl = searchParams.get("projectId");
@@ -58,6 +66,7 @@ function ResearchContent() {
       restoreState(pid);
       restoreAnalysis(pid);
       fetchProjectInfo(pid);
+      fetchFeedbackEntries(pid);
     } else {
       router.push("/workflow");
     }
@@ -110,6 +119,34 @@ function ResearchContent() {
         const data = await response.json();
         if (data.current_iteration) {
           setCurrentIteration(data.current_iteration);
+        }
+      }
+    } catch {}
+  };
+
+  const fetchFeedbackEntries = async (pid: string) => {
+    try {
+      const response = await fetch(`/api/projects/${pid}/iterations`);
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const entries = data
+            .filter((iter: any) => iter.feedback_text)
+            .map((iter: any) => {
+              // Extract chosen solution from the stage 5 snapshot
+              const stage5 = iter.stages_snapshot?.["5"];
+              const chosenSolution = stage5?.chosen_solution;
+              return {
+                feedback_text: iter.feedback_text,
+                iteration_number: iter.iteration_number,
+                created_at: iter.created_at,
+                chosen_solution: chosenSolution
+                  ? { idea: chosenSolution.idea, image_url: chosenSolution.image_url }
+                  : undefined,
+              };
+            })
+            .reverse(); // newest first
+          setFeedbackEntries(entries);
         }
       }
     } catch {}
@@ -537,6 +574,39 @@ function ResearchContent() {
               )}
             </button>
           </div>
+
+          {/* Feedback Entries (from previous iterations, newest first) */}
+          {feedbackEntries.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-2xl font-bold">Feedback History</h3>
+              <div className="space-y-3">
+                {feedbackEntries.map((entry, index) => (
+                  <div
+                    key={entry.iteration_number}
+                    className="p-4 border rounded-lg bg-amber-50 border-amber-200"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <MessageSquare className="w-4 h-4 text-amber-600" />
+                      <span className="font-semibold text-amber-800">
+                        Feedback {feedbackEntries.length - index}
+                      </span>
+                    </div>
+                    {entry.chosen_solution && (
+                      <div className="mb-2 p-3 bg-white rounded border border-amber-100">
+                        <span className="text-sm text-gray-500">Solution evaluated: </span>
+                        <span className="text-sm font-medium text-gray-800">
+                          {entry.chosen_solution.idea}
+                        </span>
+                      </div>
+                    )}
+                    <p className="text-gray-700 leading-relaxed whitespace-pre-line">
+                      {entry.feedback_text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Analysis Results */}
           {analysis && (

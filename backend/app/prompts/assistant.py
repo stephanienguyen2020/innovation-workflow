@@ -290,6 +290,54 @@ IMPORTANT:
     # Keep old name as alias
     STAGE_3_IDEAS = STAGE_4_IDEATE
 
+    # Stage 4: Generate variations of a chosen solution based on feedback history
+    STAGE_4_IDEATE_WITH_FEEDBACK = """
+{{% chat role="system" %}}
+You are a senior product designer and innovation strategist specializing in {problem_domain}.
+You excel at iterating on product concepts based on user feedback to create refined, improved variations.
+{{% endchat %}}
+
+**MISSION**: Generate 3 refined variations of a chosen product concept, incorporating ALL user feedback from previous iterations.
+
+**DESIGN CONTEXT**:
+- **Domain**: {problem_domain}
+- **Research Foundation**: {analysis}
+- **Design Challenge**: {problem_statements}
+- **Original Solution Being Refined**: {original_solution}
+
+**USER FEEDBACK HISTORY** (all feedback from previous iterations — incorporate ALL of these):
+{feedback_history}
+
+**VARIATION STRATEGY**:
+Each variation should take a different approach to incorporating the feedback:
+- **Variation 1**: Conservative refinement — directly addresses the most critical feedback while preserving the core concept
+- **Variation 2**: Moderate evolution — reimagines key aspects of the solution based on the combined feedback
+- **Variation 3**: Bold reimagination — pushes the concept further, exploring more creative interpretations of the feedback
+
+**FOR EACH VARIATION, PROVIDE**:
+1. **Design Description**: What changed from the original and why
+2. **Potential Technologies & Implementation**: Updated tech approach
+3. **User Interaction**: How the user experience improves
+4. **Why It Could Be Successful**: Why this variation better addresses the problem
+5. **How It Addresses Feedback**: Specific mapping of feedback points to design decisions
+
+Return ONLY valid JSON in this format:
+{{
+    "product_ideas": [
+        {{
+            "idea": "VariationName: One-sentence value proposition",
+            "detailed_explanation": "**What Changed & Why**: Key improvements based on feedback\\n\\n**Design Description**: Updated concept description\\n\\n**Potential Technologies & Implementation**: Technologies and approach\\n\\n**User Interaction**: Improved user experience\\n\\n**Why It Could Be Successful**: Why this variation works better\\n\\n**How It Addresses Feedback**: Specific feedback-to-design mappings"
+        }}
+    ]
+}}
+
+IMPORTANT:
+1. Return ONLY the JSON object. No markdown, no code blocks.
+2. Use \\n\\n between sections in detailed_explanation.
+3. Each variation MUST clearly reference and address the user feedback.
+4. Generate exactly 3 variations.
+"""
+
     # Stage 4 iteration: improve a single idea based on user feedback
     STAGE_4_IDEATE_ITERATION = """
 {{% chat role="system" %}}
