@@ -17,3 +17,4 @@ python-dotenv==1.0.1
 google-cloud-firestore
 itsdangerous
 python-multipart
+email-validator
