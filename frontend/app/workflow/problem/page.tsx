@@ -19,7 +19,11 @@ function ProblemDefinitionContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectIdFromUrl = searchParams.get("projectId");
-  const projectId = projectIdFromUrl || (typeof window !== "undefined" ? localStorage.getItem("currentProjectId") : null);
+  const projectId =
+    projectIdFromUrl ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("currentProjectId")
+      : null);
 
   const { model } = useModel();
 
@@ -37,7 +41,9 @@ function ProblemDefinitionContent() {
   const [hasUploadState, setHasUploadState] = useState(false);
   const [generatingIdeas, setGeneratingIdeas] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
-  const [generatedWithModel, setGeneratedWithModel] = useState<string | null>(null);
+  const [generatedWithModel, setGeneratedWithModel] = useState<string | null>(
+    null
+  );
 
   // Check if we have upload state saved in localStorage
   useEffect(() => {
@@ -615,7 +621,9 @@ function ProblemDefinitionContent() {
             disabled={generatingIdeas || generatingProblems}
             className={`bg-black text-white px-8 py-3 rounded-[10px] text-xl font-medium
                      hover:opacity-90 transition-opacity ${
-                       generatingIdeas || generatingProblems ? "opacity-50 cursor-not-allowed" : ""
+                       generatingIdeas || generatingProblems
+                         ? "opacity-50 cursor-not-allowed"
+                         : ""
                      }`}
           >
             Back to Research
@@ -638,7 +646,7 @@ function ProblemDefinitionContent() {
                   Re-Generating...
                 </>
               ) : (
-                "Re-Generate Problems"
+                "Re-Define Problems"
               )}
             </button>
           )}

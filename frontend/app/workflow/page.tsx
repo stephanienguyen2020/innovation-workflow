@@ -12,6 +12,11 @@ export default function WorkflowPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [currentIteration, setCurrentIteration] = useState(1);
+  const [iterationFeedback, setIterationFeedback] = useState<{
+    has_problem_feedback?: boolean;
+    has_solution_feedback?: boolean;
+    has_image_feedback?: boolean;
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const evaluateRef = useRef<HTMLButtonElement>(null);
@@ -45,6 +50,9 @@ export default function WorkflowPage() {
         .then((data) => {
           if (data.current_iteration) {
             setCurrentIteration(data.current_iteration);
+          }
+          if (data.iteration_feedback) {
+            setIterationFeedback(data.iteration_feedback);
           }
         })
         .catch(() => {});
@@ -215,16 +223,26 @@ export default function WorkflowPage() {
               </svg>
             </div>
 
-            {/* -- Analysis -- */}
+            {/* -- Analyze -- */}
             <div className="flex justify-center">
               <button
                 onClick={() => nav("/workflow/analysis")}
                 className="bg-[#7a7a7a] text-white font-semibold rounded-[10px] hover:opacity-90 transition-opacity
                            px-10 py-5 w-full max-w-[460px] text-center"
               >
-                <span className="block text-[22px] font-bold">Analysis</span>
+                <span className="block text-[22px] font-bold">
+                  {currentIteration > 1 && iterationFeedback?.has_problem_feedback
+                    ? "Refine Problem"
+                    : currentIteration > 1 && !iterationFeedback?.has_problem_feedback
+                      ? "Chosen Problem"
+                      : "Analyze"}
+                </span>
                 <span className="block text-sm font-normal mt-1 opacity-80">
-                  (Problem definition)
+                  {currentIteration > 1 && iterationFeedback?.has_problem_feedback
+                    ? "(Refine the problem based on feedback)"
+                    : currentIteration > 1 && !iterationFeedback?.has_problem_feedback
+                      ? "(Problem carried from previous round)"
+                      : "(Identify a Problem)"}
                 </span>
               </button>
             </div>
@@ -253,9 +271,17 @@ export default function WorkflowPage() {
                   className="bg-[#b0b0b0] text-black font-semibold rounded-[10px] hover:opacity-90 transition-opacity
                              px-6 py-5 w-[240px] text-center"
                 >
-                  <span className="block text-[22px] font-bold">Ideate</span>
+                  <span className="block text-[22px] font-bold">
+                    {currentIteration > 1 && (iterationFeedback?.has_solution_feedback || iterationFeedback?.has_image_feedback)
+                      ? "Refine Ideas"
+                      : "Ideate"}
+                  </span>
                   <span className="block text-sm font-normal mt-1 opacity-70">
-                    (Generate solutions)
+                    {currentIteration > 1 && iterationFeedback?.has_solution_feedback
+                      ? "(Refine solutions based on feedback)"
+                      : currentIteration > 1 && iterationFeedback?.has_image_feedback
+                        ? "(Regenerate images based on feedback)"
+                        : "(Generate solutions)"}
                   </span>
                 </button>
 

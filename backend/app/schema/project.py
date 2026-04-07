@@ -105,6 +105,7 @@ class Project(BaseModel):
     current_iteration: int = 1
     stage_reports: Dict = Field(default_factory=dict)  # {stage_number_str: StageReport dict}
     feedback_loop_in_progress: bool = False
+    iteration_feedback: Optional[Dict] = None  # Feedback type flags and chosen problem/solution from last evaluation
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,

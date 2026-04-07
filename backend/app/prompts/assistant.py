@@ -167,6 +167,47 @@ Return ONLY valid JSON matching the Pydantic model structure above:
     # Keep old name as alias
     STAGE_2_PROBLEMS = STAGE_3_ANALYSIS
 
+    # Stage 3 Refine: Refine problem statements based on user feedback
+    STAGE_3_REFINE = """
+{{% chat role="system" %}}
+You are a senior product designer and design strategist working on Innovation Workflow.
+Your expertise lies in refining problem statements based on user feedback to better capture the true design challenge.
+{{% endchat %}}
+
+**MISSION**: Refine the problem statements based on the user's feedback from the evaluation stage.
+
+**CONTEXT**:
+- **Domain**: {problem_domain}
+- **Research Insights**: {analysis}
+
+**PREVIOUS PROBLEM STATEMENTS** (from the last iteration):
+{previous_problems}
+
+**USER FEEDBACK ON THE PROBLEM**:
+{problem_feedback}
+
+**REFINEMENT APPROACH**:
+1. Carefully analyze the user's feedback to understand what they want changed about the problem framing
+2. Preserve aspects of the previous problems that were effective
+3. Incorporate the feedback to create more accurate, targeted problem statements
+4. Ensure the refined problems still follow human-centered design principles
+
+Generate exactly 5 refined problem statements that address the user's feedback while maintaining quality.
+
+Each problem statement should follow this formula:
+"[Specific user persona experiencing the problem] [the problem they are experiencing] when/because [why they experience the problem], making/causing them to [why it is an important problem — the emotional or practical impact on them]."
+
+Return ONLY valid JSON:
+{{
+    "problem_statements": [
+        {{
+            "problem": "Refined problem statement",
+            "explanation": "Design rationale explaining how this addresses the user's feedback"
+        }}
+    ]
+}}
+"""
+
     # Stage 4: Ideate - generate solutions (was Stage 3)
     STAGE_4_IDEATE = """
 {{% chat role="system" %}}
@@ -336,6 +377,35 @@ IMPORTANT:
 2. Use \\n\\n between sections in detailed_explanation.
 3. Each variation MUST clearly reference and address the user feedback.
 4. Generate exactly 3 variations.
+"""
+
+    # Stage 4: Image-only refinement — same ideas, different images based on feedback
+    STAGE_4_IMAGE_ONLY_REFINE = """
+{{% chat role="system" %}}
+You are a senior product designer. The user wants to keep the same product ideas but refine the visual concepts.
+{{% endchat %}}
+
+**MISSION**: Return the EXACT same 3 product ideas (same names, same descriptions) as the original solution.
+Do NOT change the idea names or descriptions — only the images will be regenerated separately based on the user's image feedback.
+
+**ORIGINAL SOLUTION** (return these exactly):
+{original_solution}
+
+**USER IMAGE FEEDBACK** (this will be used for image regeneration, not for text changes):
+{image_feedback}
+
+Return ONLY valid JSON with the exact same ideas:
+{{
+    "product_ideas": [
+        {{
+            "idea": "Exact same idea name and value proposition as the original",
+            "detailed_explanation": "Exact same detailed explanation as the original"
+        }}
+    ]
+}}
+
+IMPORTANT: Return exactly 3 ideas. Copy the idea names and detailed_explanations EXACTLY from the original solution.
+The ideas text MUST remain identical — only the images will change.
 """
 
     # Stage 4 iteration: improve a single idea based on user feedback

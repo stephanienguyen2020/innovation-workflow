@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-const STAGE_NAMES = ["Research", "Understand", "Analysis", "Ideate", "Evaluate"];
+const STAGE_NAMES = ["Research", "Understand", "Analyze", "Ideate", "Evaluate"];
 
 interface WorkflowProgressProps {
   currentStep: number;

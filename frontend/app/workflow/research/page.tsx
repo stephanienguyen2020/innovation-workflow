@@ -47,6 +47,13 @@ function ResearchContent() {
   const [analysis, setAnalysis] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentIteration, setCurrentIteration] = useState(1);
+  const [iterationFeedback, setIterationFeedback] = useState<{
+    has_problem_feedback?: boolean;
+    has_solution_feedback?: boolean;
+    has_image_feedback?: boolean;
+    chosen_problem?: { id: string; problem: string; explanation: string };
+    past_problems?: Array<{ id: string; problem: string; explanation: string }>;
+  } | null>(null);
   const [feedbackEntries, setFeedbackEntries] = useState<
     Array<{
       feedback_text: string;
@@ -120,6 +127,9 @@ function ResearchContent() {
         if (data.current_iteration) {
           setCurrentIteration(data.current_iteration);
         }
+        if (data.iteration_feedback) {
+          setIterationFeedback(data.iteration_feedback);
+        }
       }
     } catch {}
   };
@@ -141,7 +151,10 @@ function ResearchContent() {
                 iteration_number: iter.iteration_number,
                 created_at: iter.created_at,
                 chosen_solution: chosenSolution
-                  ? { idea: chosenSolution.idea, image_url: chosenSolution.image_url }
+                  ? {
+                      idea: chosenSolution.idea,
+                      image_url: chosenSolution.image_url,
+                    }
                   : undefined,
               };
             })
@@ -374,7 +387,9 @@ function ResearchContent() {
         })
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An unexpected error occurred");
+      setError(
+        err instanceof Error ? err.message : "An unexpected error occurred"
+      );
       setAnalysis("");
     } finally {
       setIsAnalyzing(false);
@@ -554,7 +569,7 @@ function ResearchContent() {
             </div>
           </div>
 
-          {/* Generate Analysis / Re-Analyze Button */}
+          {/* Summarize Research / Re-Summarize Button */}
           <div className="flex justify-start">
             <button
               onClick={handleGenerateAnalysis}
@@ -568,9 +583,9 @@ function ResearchContent() {
                   Analyzing...
                 </>
               ) : analysis ? (
-                "Re-Analyze"
+                "Re-Summarize"
               ) : (
-                "Generate Analysis"
+                "Summarize Research"
               )}
             </button>
           </div>
@@ -593,7 +608,9 @@ function ResearchContent() {
                     </div>
                     {entry.chosen_solution && (
                       <div className="mb-2 p-3 bg-white rounded border border-amber-100">
-                        <span className="text-sm text-gray-500">Solution evaluated: </span>
+                        <span className="text-sm text-gray-500">
+                          Solution evaluated:{" "}
+                        </span>
                         <span className="text-sm font-medium text-gray-800">
                           {entry.chosen_solution.idea}
                         </span>
@@ -608,10 +625,10 @@ function ResearchContent() {
             </div>
           )}
 
-          {/* Analysis Results */}
+          {/* Research Summary */}
           {analysis && (
             <div className="space-y-4">
-              <h3 className="text-2xl font-bold">Analysis Results:</h3>
+              <h3 className="text-2xl font-bold">Research Summary:</h3>
               <div className="p-4 border rounded-lg bg-gray-50">
                 <p className="text-gray-600 leading-relaxed whitespace-pre-line">
                   {renderMarkdown(analysis)}
@@ -636,7 +653,11 @@ function ResearchContent() {
                 className="bg-[#001DFA] text-white px-8 py-3 rounded-[10px] text-xl font-medium
                         hover:opacity-90 transition-opacity inline-flex items-center gap-2"
               >
-                Define Problems
+                {currentIteration > 1 && iterationFeedback?.has_problem_feedback
+                  ? "Refine the Problem"
+                  : currentIteration > 1 && !iterationFeedback?.has_problem_feedback
+                    ? "Chosen Problem"
+                    : "Define Problems"}
                 <Rocket className="w-5 h-5" />
               </button>
             )}

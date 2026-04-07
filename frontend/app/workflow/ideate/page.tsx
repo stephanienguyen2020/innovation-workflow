@@ -65,6 +65,16 @@ function IdeateContent() {
       chosen_solution?: ProductIdea;
     }>
   >([]);
+  const [currentIteration, setCurrentIteration] = useState(1);
+  const [iterationFeedback, setIterationFeedback] = useState<{
+    has_problem_feedback?: boolean;
+    has_solution_feedback?: boolean;
+    has_image_feedback?: boolean;
+    chosen_solution?: ProductIdea;
+  } | null>(null);
+
+  const isRefineMode = currentIteration > 1 && (iterationFeedback?.has_solution_feedback || iterationFeedback?.has_image_feedback);
+  const isImageOnlyMode = currentIteration > 1 && iterationFeedback?.has_image_feedback && !iterationFeedback?.has_solution_feedback && !iterationFeedback?.has_problem_feedback;
 
   useEffect(() => {
     if (!projectId) {
@@ -78,6 +88,14 @@ function IdeateContent() {
       setError(null);
 
       try {
+        // 0. Fetch project info for iteration context
+        const projectResponse = await fetch(`/api/projects/${projectId}`);
+        if (projectResponse.ok) {
+          const projectData = await projectResponse.json();
+          if (projectData.current_iteration) setCurrentIteration(projectData.current_iteration);
+          if (projectData.iteration_feedback) setIterationFeedback(projectData.iteration_feedback);
+        }
+
         // 1. Fetch product ideas from stage 4
         const ideasResponse = await fetch(`/api/projects/${projectId}/stages/4`);
 
@@ -332,7 +350,9 @@ function IdeateContent() {
       {/* Main Content */}
       <div className="space-y-16">
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-5xl font-bold">Ideate</h2>
+          <h2 className="text-5xl font-bold">
+            {isImageOnlyMode ? "Ideate" : isRefineMode ? "Refine Ideas" : "Ideate"}
+          </h2>
           <div className="flex items-center gap-3">
             <StageReportButton
               projectId={projectId || ""}
@@ -393,10 +413,10 @@ function IdeateContent() {
           </div>
         </div>
 
-        {/* Original Solution (shown when iterating) */}
+        {/* Chosen Solution from Previous Round (shown when iterating) */}
         {originalSolution && (
           <div className="space-y-2 mb-10">
-            <h3 className="text-4xl font-bold mb-4">Original Solution</h3>
+            <h3 className="text-4xl font-bold mb-4">Chosen Solution from Previous Round</h3>
             <div className="border-2 border-blue-200 rounded-lg p-5 bg-blue-50">
               <p className="text-lg font-semibold text-blue-900 mb-2">{originalSolution.idea}</p>
               {originalSolution.image_url && (
@@ -418,7 +438,11 @@ function IdeateContent() {
         {/* Generated Ideas / Refined Variations Section */}
         <div className="space-y-2 mb-10">
           <h3 className="text-4xl font-bold mb-6">
-            {originalSolution ? "Refined Variations" : "Generated Ideas"}
+            {isImageOnlyMode
+              ? "Image Variations"
+              : isRefineMode || originalSolution
+                ? "Refined Ideas"
+                : "Generated Ideas"}
           </h3>
           {productIdeas.length > 0 ? (
             <div className="space-y-5">
@@ -494,7 +518,7 @@ function IdeateContent() {
         {/* Past Iterations (newest first) */}
         {pastIterations.length > 0 && (
           <div className="space-y-2 mb-10">
-            <h3 className="text-4xl font-bold mb-4">Previous Iterations</h3>
+            <h3 className="text-4xl font-bold mb-4">Idea History</h3>
             <div className="space-y-8">
               {pastIterations.map((pi) => (
                 <div
@@ -503,7 +527,7 @@ function IdeateContent() {
                 >
                   <div className="bg-gray-100 px-5 py-3 flex items-center gap-3">
                     <span className="text-sm font-bold text-white bg-gray-600 px-3 py-1 rounded-full">
-                      Iteration {pi.iteration_number}
+                      v{pi.iteration_number}
                     </span>
                     {pi.chosen_solution && (
                       <span className="text-sm text-gray-600">
@@ -566,9 +590,9 @@ function IdeateContent() {
                     hover:opacity-90 transition-opacity flex items-center gap-2"
           >
             {isRegenerating ? (
-              <><Loader2 className="w-5 h-5 animate-spin" /> Regenerating...</>
+              <><Loader2 className="w-5 h-5 animate-spin" /> {isRefineMode ? "Refining..." : "Regenerating..."}</>
             ) : (
-              "Regenerate Ideas"
+              isRefineMode ? "Refine Ideas" : "Regenerate Ideas"
             )}
           </button>
           <button

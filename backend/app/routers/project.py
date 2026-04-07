@@ -232,6 +232,9 @@ async def submit_feedback(
         feedback_entries=body.get("feedback_entries"),
         evaluation_notes=body.get("evaluation_notes"),
         chosen_solution_id=body.get("chosen_solution_id"),
+        problem_notes=body.get("problem_notes"),
+        solution_notes=body.get("solution_notes"),
+        image_notes=body.get("image_notes"),
     )
 
 
@@ -317,7 +320,7 @@ async def save_iteration(
     db: AsyncClient = Depends(get_db),
 ) -> Dict:
     """Save the current state as an iteration snapshot, then reset stages 3-5
-    so problems and ideas get re-generated with feedback context.
+    so problems and ideas get Re-Defined with feedback context.
     Keeps stage 1 (research) and stage 2 (analysis) intact."""
     feedback_text = body.get("feedback_text", "").strip()
     if not feedback_text:
@@ -330,19 +333,67 @@ async def save_iteration(
     # 1. Snapshot current state (before resetting)
     new_iteration = await save_iteration_snapshot(db, project_id, feedback_text)
 
-    # 2. Reset stages 3-5 so they get re-generated with feedback
+    # 2. Build iteration_feedback metadata so downstream pages know what mode to use
+    has_problem_feedback = bool(body.get("has_problem_feedback", False))
+    has_solution_feedback = bool(body.get("has_solution_feedback", False))
+    has_image_feedback = bool(body.get("has_image_feedback", False))
+
+    iteration_feedback = {
+        "has_problem_feedback": has_problem_feedback,
+        "has_solution_feedback": has_solution_feedback,
+        "has_image_feedback": has_image_feedback,
+        "problem_notes": body.get("problem_notes", ""),
+        "solution_notes": body.get("solution_notes", ""),
+        "image_notes": body.get("image_notes", ""),
+    }
+
+    # Carry forward the chosen problem and solution from stage 5 / stage 3
     project = await get_project(db, project_id)
+    stage_5 = next((s for s in project.stages if s.stage_number == 5), None)
+    stage_3 = next((s for s in project.stages if s.stage_number == 3), None)
+    if stage_5 and stage_5.data.get("chosen_solution"):
+        iteration_feedback["chosen_solution"] = stage_5.data["chosen_solution"]
+    if stage_3 and stage_3.data.get("problem_statements"):
+        # Find the chosen problem (the one matching the chosen solution's problem_id)
+        chosen_solution = (stage_5.data.get("chosen_solution") or {}) if stage_5 else {}
+        chosen_problem_id = chosen_solution.get("problem_id")
+        all_problems = stage_3.data.get("problem_statements", []) + stage_3.data.get("custom_problems", [])
+        chosen_problem = next((p for p in all_problems if p.get("id") == chosen_problem_id), None)
+        if chosen_problem:
+            iteration_feedback["chosen_problem"] = chosen_problem
+        # Also save all problems for history
+        iteration_feedback["past_problems"] = all_problems
+
+    # 3. Reset stages based on feedback type
+    #    - If no problem feedback: keep stage 3 (chosen problem) intact, only reset 4-5
+    #    - If problem feedback: reset stages 3-5
+    reset_from = 3 if has_problem_feedback else 4
     for stage in project.stages:
-        if stage.stage_number >= 3:
+        if stage.stage_number >= reset_from:
             stage.status = StageStatus.NOT_STARTED
             stage.data = {}
             stage.updated_at = datetime.utcnow()
+
+    # If no problem feedback, preserve chosen problem in stage 3
+    if not has_problem_feedback and chosen_problem_id:
+        stage_3_obj = next((s for s in project.stages if s.stage_number == 3), None)
+        if stage_3_obj and chosen_problem:
+            stage_3_obj.status = StageStatus.COMPLETED
+            stage_3_obj.data = {
+                "problem_statements": [chosen_problem],
+                "custom_problems": [],
+                "is_refined": False,
+                "chosen_problem_locked": True,
+            }
+            stage_3_obj.updated_at = datetime.utcnow()
+
     project.updated_at = datetime.utcnow()
 
     stages_data = [s.dict() for s in project.stages]
     await db.collection("projects").document(project_id).update({
         "stages": stages_data,
         "updated_at": project.updated_at,
+        "iteration_feedback": iteration_feedback,
     })
 
     return {"iteration": new_iteration, "message": f"Saved iteration snapshot. Now on iteration {new_iteration}."}

@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { Loader2, ArrowLeft, RotateCcw, FileText } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useModel } from "@/context/ModelContext";
@@ -17,6 +17,13 @@ interface ProductIdea {
   detailed_explanation: string;
   problem_id: string;
   image_url?: string;
+}
+
+interface ProblemStatement {
+  id: string;
+  problem: string;
+  explanation: string;
+  is_custom?: boolean;
 }
 
 function stripMarkdown(text: string): string {
@@ -41,9 +48,19 @@ function EvaluateContent() {
   const [error, setError] = useState<string | null>(null);
   const [chosenSolution, setChosenSolution] = useState<ProductIdea | null>(null);
   const [allIdeas, setAllIdeas] = useState<ProductIdea[]>([]);
-  const [evaluationNotes, setEvaluationNotes] = useState("");
+  const [problemNotes, setProblemNotes] = useState("");
+  const [solutionNotes, setSolutionNotes] = useState("");
+  const [imageNotes, setImageNotes] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [currentIteration, setCurrentIteration] = useState(1);
+  const [stage3Problems, setStage3Problems] = useState<ProblemStatement[]>([]);
+
+  const chosenProblem = useMemo(() => {
+    if (!chosenSolution?.problem_id || stage3Problems.length === 0) return null;
+    return (
+      stage3Problems.find((p) => p.id === chosenSolution.problem_id) ?? null
+    );
+  }, [chosenSolution, stage3Problems]);
 
   useEffect(() => {
     if (!projectId) {
@@ -62,6 +79,19 @@ function EvaluateContent() {
         if (projectResponse.ok) {
           const projectData = await projectResponse.json();
           setCurrentIteration(projectData.current_iteration || 1);
+        }
+
+        // Problems from stage 3 (for chosen-problem context on this page)
+        const stage3Response = await fetch(`/api/projects/${projectId}/stages/3`);
+        if (stage3Response.ok) {
+          const stage3Data = await stage3Response.json();
+          const data = stage3Data?.data;
+          if (data) {
+            setStage3Problems([
+              ...(data.problem_statements || []),
+              ...(data.custom_problems || []),
+            ]);
+          }
         }
 
         // Get ideas from stage 4
@@ -85,8 +115,17 @@ function EvaluateContent() {
         const stage5Response = await fetch(`/api/projects/${projectId}/stages/5`);
         if (stage5Response.ok) {
           const stage5Data = await stage5Response.json();
-          if (stage5Data?.data?.evaluation_notes) {
-            setEvaluationNotes(stage5Data.data.evaluation_notes);
+          if (stage5Data?.data?.problem_notes) {
+            setProblemNotes(stage5Data.data.problem_notes);
+          }
+          if (stage5Data?.data?.solution_notes) {
+            setSolutionNotes(stage5Data.data.solution_notes);
+          }
+          if (stage5Data?.data?.image_notes) {
+            setImageNotes(stage5Data.data.image_notes);
+          }
+          if (stage5Data?.data?.evaluation_notes && !stage5Data?.data?.problem_notes) {
+            setSolutionNotes(stage5Data.data.evaluation_notes);
           }
           if (stage5Data?.data?.chosen_solution) {
             setChosenSolution(stage5Data.data.chosen_solution);
@@ -102,9 +141,17 @@ function EvaluateContent() {
     fetchData();
   }, [projectId, solutionId]);
 
+  const combinedNotes = [
+    problemNotes.trim() && `Problem: ${problemNotes.trim()}`,
+    solutionNotes.trim() && `Solution: ${solutionNotes.trim()}`,
+    imageNotes.trim() && `Image: ${imageNotes.trim()}`,
+  ].filter(Boolean).join("\n\n");
+
+  const hasAnyNotes = problemNotes.trim() || solutionNotes.trim() || imageNotes.trim();
+
   const handleSubmitAndIterate = async () => {
-    if (!projectId || !evaluationNotes.trim()) {
-      setError("Please enter feedback before iterating.");
+    if (!projectId || !hasAnyNotes) {
+      setError("Please enter feedback in at least one field before iterating.");
       return;
     }
 
@@ -122,18 +169,27 @@ function EvaluateContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          feedback_entries: [{ feedback_text: evaluationNotes, timestamp: new Date().toISOString() }],
-          evaluation_notes: evaluationNotes,
+          feedback_entries: [{ feedback_text: combinedNotes, timestamp: new Date().toISOString() }],
+          evaluation_notes: combinedNotes,
+          problem_notes: problemNotes.trim(),
+          solution_notes: solutionNotes.trim(),
+          image_notes: imageNotes.trim(),
           chosen_solution_id: chosenSolution.id,
         }),
       });
 
-      // Save iteration snapshot (feedback + chosen solution, no re-analysis)
+      // Save iteration snapshot with feedback type flags
       await fetch(`/api/projects/${projectId}/save-iteration`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          feedback_text: evaluationNotes,
+          feedback_text: combinedNotes,
+          has_problem_feedback: !!problemNotes.trim(),
+          has_solution_feedback: !!solutionNotes.trim(),
+          has_image_feedback: !!imageNotes.trim(),
+          problem_notes: problemNotes.trim(),
+          solution_notes: solutionNotes.trim(),
+          image_notes: imageNotes.trim(),
         }),
       });
 
@@ -160,7 +216,10 @@ function EvaluateContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          evaluation_notes: evaluationNotes,
+          evaluation_notes: combinedNotes,
+          problem_notes: problemNotes.trim(),
+          solution_notes: solutionNotes.trim(),
+          image_notes: imageNotes.trim(),
           chosen_solution_id: chosenSolution.id,
         }),
       });
@@ -214,6 +273,22 @@ function EvaluateContent() {
           </div>
         )}
 
+        {chosenProblem && (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Chosen problem
+            </p>
+            <p className="text-lg font-semibold text-gray-900 leading-snug">
+              {chosenProblem.problem}
+            </p>
+            {chosenProblem.explanation?.trim() && (
+              <p className="text-gray-600 text-base leading-relaxed">
+                {chosenProblem.explanation}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Chosen Solution Summary */}
         {chosenSolution && (
           <div className="bg-blue-50 p-6 rounded-xl space-y-3">
@@ -256,14 +331,43 @@ function EvaluateContent() {
         )}
 
         {/* Evaluation Notes */}
-        <div className="space-y-3">
-          <h3 className="text-2xl font-semibold">Evaluation Notes</h3>
-          <textarea
-            value={evaluationNotes}
-            onChange={(e) => setEvaluationNotes(e.target.value)}
-            placeholder="Add any evaluation notes about the current iteration..."
-            className="w-full h-32 p-4 border rounded-lg resize-none"
-          />
+        <div className="space-y-5">
+          <div>
+            <h3 className="text-2xl font-semibold">Evaluation Notes</h3>
+            <p className="text-gray-500 text-sm mt-1">
+              Fill in the areas you'd like to evaluate. Leave any field blank to skip it.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-lg font-medium">Problem</label>
+            <textarea
+              value={problemNotes}
+              onChange={(e) => setProblemNotes(e.target.value)}
+              placeholder="Any feedback on the problem statement or framing..."
+              className="w-full h-28 p-4 border rounded-lg resize-none"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-lg font-medium">Solution</label>
+            <textarea
+              value={solutionNotes}
+              onChange={(e) => setSolutionNotes(e.target.value)}
+              placeholder="Any feedback on the proposed solution..."
+              className="w-full h-28 p-4 border rounded-lg resize-none"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-lg font-medium">Image</label>
+            <textarea
+              value={imageNotes}
+              onChange={(e) => setImageNotes(e.target.value)}
+              placeholder="Any feedback on the generated image or visual concept..."
+              className="w-full h-28 p-4 border rounded-lg resize-none"
+            />
+          </div>
         </div>
 
         {/* Iteration History */}
@@ -282,10 +386,10 @@ function EvaluateContent() {
 
           <button
             onClick={handleSubmitAndIterate}
-            disabled={!evaluationNotes.trim() || isSubmittingFeedback}
+            disabled={!hasAnyNotes || isSubmittingFeedback}
             className={`text-white px-8 py-3 rounded-[10px] text-lg font-medium
                      hover:opacity-90 transition-opacity inline-flex items-center gap-2
-                     ${evaluationNotes.trim() && !isSubmittingFeedback ? "bg-[#001DFA]" : "bg-gray-500 opacity-50 cursor-not-allowed"}`}
+                     ${hasAnyNotes && !isSubmittingFeedback ? "bg-[#001DFA]" : "bg-gray-500 opacity-50 cursor-not-allowed"}`}
           >
             {isSubmittingFeedback ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>

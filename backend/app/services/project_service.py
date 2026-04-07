@@ -321,40 +321,62 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
 
         doc_text = await rag_service.get_document_text(project.document_id)
 
-        enriched_prompt = ProjectPrompts.STAGE_3_ANALYSIS + (
-            f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
-        )
+        # Check iteration feedback to decide prompt strategy
+        iter_fb = getattr(project, 'iteration_feedback', None) or {}
+        has_problem_feedback = iter_fb.get("has_problem_feedback", False)
+        problem_notes = iter_fb.get("problem_notes", "")
 
-        # Include feedback history if there are previous iterations
-        feedback_context = ""
-        if project.current_iteration > 1:
-            iterations = await db_get_iteration_history(db, project_id)
-            if iterations:
-                feedback_parts = []
-                for it in iterations:
-                    ft = it.get("feedback_text", "")
-                    chosen = it.get("stages_snapshot", {}).get("5", {}).get("chosen_solution", {})
-                    solution_name = chosen.get("idea", "Unknown") if chosen else "Unknown"
-                    feedback_parts.append(
-                        f"- Iteration {it.get('iteration_number', '?')}: "
-                        f"Solution evaluated: \"{solution_name}\" — Feedback: \"{ft}\""
+        if has_problem_feedback and problem_notes and project.current_iteration > 1:
+            # REFINE MODE: Use the refine prompt with previous problems and user feedback
+            previous_problems = json.dumps(iter_fb.get("past_problems", []), indent=2)
+            enriched_prompt = ProjectPrompts.STAGE_3_REFINE + (
+                f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
+            )
+            response = await agent_service.generate_json(
+                enriched_prompt,
+                context={
+                    "analysis": analysis,
+                    "problem_domain": project.problem_domain,
+                    "previous_problems": previous_problems,
+                    "problem_feedback": problem_notes,
+                },
+                model_id=model_id,
+            )
+        else:
+            # STANDARD MODE: Generate fresh problems (or with general feedback history)
+            enriched_prompt = ProjectPrompts.STAGE_3_ANALYSIS + (
+                f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
+            )
+
+            feedback_context = ""
+            if project.current_iteration > 1:
+                iterations = await db_get_iteration_history(db, project_id)
+                if iterations:
+                    feedback_parts = []
+                    for it in iterations:
+                        ft = it.get("feedback_text", "")
+                        chosen = it.get("stages_snapshot", {}).get("5", {}).get("chosen_solution", {})
+                        solution_name = chosen.get("idea", "Unknown") if chosen else "Unknown"
+                        feedback_parts.append(
+                            f"- Iteration {it.get('iteration_number', '?')}: "
+                            f"Solution evaluated: \"{solution_name}\" — Feedback: \"{ft}\""
+                        )
+                    feedback_context = (
+                        "\n\n**USER FEEDBACK HISTORY** (from previous iterations — "
+                        "use this to guide which problems are most important and what directions to explore):\n"
+                        + "\n".join(feedback_parts)
+                        + "\n\nPlease generate problem statements that take into account ALL of the above feedback. "
+                        "Prioritize problems that address the user's concerns and desired directions.\n"
                     )
-                feedback_context = (
-                    "\n\n**USER FEEDBACK HISTORY** (from previous iterations — "
-                    "use this to guide which problems are most important and what directions to explore):\n"
-                    + "\n".join(feedback_parts)
-                    + "\n\nPlease generate problem statements that take into account ALL of the above feedback. "
-                    "Prioritize problems that address the user's concerns and desired directions.\n"
-                )
 
-        response = await agent_service.generate_json(
-            enriched_prompt + feedback_context,
-            context={
-                "analysis": analysis,
-                "problem_domain": project.problem_domain
-            },
-            model_id=model_id,
-        )
+            response = await agent_service.generate_json(
+                enriched_prompt + feedback_context,
+                context={
+                    "analysis": analysis,
+                    "problem_domain": project.problem_domain
+                },
+                model_id=model_id,
+            )
 
         try:
             if not response or (isinstance(response, str) and not response.strip()):
@@ -450,12 +472,43 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
 
         doc_text = await rag_service.get_document_text(project.document_id)
 
+        # Check iteration feedback type to decide strategy
+        iter_fb = getattr(project, 'iteration_feedback', None) or {}
+        has_image_feedback = iter_fb.get("has_image_feedback", False)
+        has_solution_feedback = iter_fb.get("has_solution_feedback", False)
+        has_problem_feedback = iter_fb.get("has_problem_feedback", False)
+        image_only_mode = has_image_feedback and not has_solution_feedback and not has_problem_feedback
+
         # Check if we have feedback history — if so, generate variations of the chosen solution
         iterations = await db_get_iteration_history(db, project_id) if project.current_iteration > 1 else []
         has_feedback = len(iterations) > 0
 
-        if has_feedback:
-            # Get the most recent chosen solution from the latest iteration snapshot
+        if image_only_mode and has_feedback:
+            # IMAGE-ONLY MODE: Same ideas, only images change based on feedback
+            latest_iteration = iterations[-1]
+            latest_stage5 = latest_iteration.get("stages_snapshot", {}).get("5", {})
+            original_solution = latest_stage5.get("chosen_solution", {})
+
+            # Get all ideas from the previous iteration's stage 4
+            latest_stage4 = latest_iteration.get("stages_snapshot", {}).get("4", {})
+            previous_ideas = latest_stage4.get("product_ideas", [])
+
+            if previous_ideas:
+                # Re-use previous ideas directly (the LLM call is just for safety/formatting)
+                response = json.dumps({"product_ideas": previous_ideas})
+            else:
+                # Fallback: use LLM to reconstruct
+                enriched_prompt = ProjectPrompts.STAGE_4_IMAGE_ONLY_REFINE
+                response = await agent_service.generate_json(
+                    enriched_prompt,
+                    context={
+                        "original_solution": json.dumps(original_solution, indent=2),
+                        "image_feedback": iter_fb.get("image_notes", ""),
+                    },
+                    model_id=model_id,
+                )
+        elif has_feedback:
+            # REFINE MODE: Generate variations based on feedback
             latest_iteration = iterations[-1]
             latest_stage5 = latest_iteration.get("stages_snapshot", {}).get("5", {})
             original_solution = latest_stage5.get("chosen_solution", {})
@@ -488,6 +541,7 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
                 model_id=model_id,
             )
         else:
+            # FRESH MODE: Generate new ideas
             enriched_prompt = ProjectPrompts.STAGE_4_IDEATE + (
                 f"\n\nORIGINAL DOCUMENT CONTENT (for reference):\n{doc_text}" if doc_text else ""
             )
@@ -521,6 +575,9 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
             if not valid_ideas:
                 raise HTTPException(status_code=500, detail="LLM returned no valid product ideas (all missing 'detailed_explanation')")
 
+            # Pass image feedback when in image-only mode so images reflect user's notes
+            image_feedback_text = iter_fb.get("image_notes", "") if image_only_mode else None
+
             async def generate_image_for_idea(idea):
                 try:
                     image_url = await image_service.generate_product_image(
@@ -529,6 +586,7 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
                         problem_domain=project.problem_domain,
                         project_id=project_id,
                         idea_id=idea["id"],
+                        feedback=image_feedback_text,
                     )
                     idea["image_url"] = image_url
                 except Exception as e:
@@ -580,6 +638,9 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
         feedback_entries: List[Dict] = None,
         evaluation_notes: str = None,
         chosen_solution_id: str = None,
+        problem_notes: str = None,
+        solution_notes: str = None,
+        image_notes: str = None,
     ) -> Stage:
         """Stage 5: Save user feedback/evaluation and optionally set chosen solution."""
         project = await db_get_project(db, project_id, user_id)
@@ -592,6 +653,14 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
             stage_data["feedback_entries"] = feedback_entries
         if evaluation_notes:
             stage_data["evaluation_notes"] = evaluation_notes
+
+        # Store individual feedback notes if provided
+        if problem_notes:
+            stage_data["problem_notes"] = problem_notes
+        if solution_notes:
+            stage_data["solution_notes"] = solution_notes
+        if image_notes:
+            stage_data["image_notes"] = image_notes
 
         # If a solution is chosen, find it from stage 4
         if chosen_solution_id:

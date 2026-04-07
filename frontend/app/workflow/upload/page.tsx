@@ -604,7 +604,7 @@ function UploadContent() {
             </div>
           </div>
 
-          {/* Generate Analysis Button */}
+          {/* Summarize Research Button */}
           <div className="flex justify-start">
             <button
               onClick={handleGenerateAnalysis}
@@ -615,20 +615,20 @@ function UploadContent() {
               {isAnalyzing ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Analyzing...
+                  Summarizing...
                 </>
               ) : analysis ? (
-                "Re-Analyze"
+                "Re-Summarize"
               ) : (
-                "Generate Analysis"
+                "Summarize Research"
               )}
             </button>
           </div>
 
-          {/* Analysis Results */}
+          {/* Research Summary */}
           {analysis && (
             <div className="space-y-4">
-              <h3 className="text-2xl font-bold">Analysis Results:</h3>
+              <h3 className="text-2xl font-bold">Research Summary:</h3>
               <div className="p-4 border rounded-lg bg-gray-50">
                 <p className="text-gray-600 leading-relaxed whitespace-pre-line">
                   {renderMarkdown(analysis)}

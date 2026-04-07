@@ -128,7 +128,7 @@ class AgentService:
                 print(f"Warning: Failed to initialize OpenAI client: {e}")
 
         if not self.gemini_llm:
-            raise ValueError("GEMINI_API_KEY is required for Gemini models")
+            print("Warning: Gemini LLM not available — check GEMINI_API_KEY and GEMINI_MODEL")
         self.llm = self.gemini_llm
         Settings.llm = self.llm
 
@@ -276,6 +276,14 @@ class AgentService:
             for chunk in response:
                 if chunk.text:
                     yield chunk.text
+
+    async def generate_text(self, prompt: str, model_id: Optional[str] = None) -> str:
+        """Generate text (non-streaming). Collects all chunks from the stream."""
+        chunks = []
+        async for chunk in self.generate_text_stream(prompt, model_id=model_id):
+            if isinstance(chunk, str):
+                chunks.append(chunk)
+        return "".join(chunks)
 
     async def generate_text_stream(self, prompt: str, model_id: Optional[str] = None):
         """
