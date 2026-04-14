@@ -50,17 +50,23 @@ class AuthService:
                     }
                 )
             
-            # Check if email exists
+            # Check if email exists — if a stale user record remains
+            # (e.g. admin removed then re-added the username), wipe it
+            # and allow fresh re-registration. Admin accounts are protected.
             if await self.db_auth.check_email_exists(user.email):
-                return JSONResponse(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    content={
-                        "statusCode": 400,
-                        "message": "Email already registered",
-                        "errorCode": "EMAIL_TAKEN",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    }
-                )
+                is_existing_admin = email_validator.is_admin_email(user.email)
+                if is_existing_admin:
+                    return JSONResponse(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        content={
+                            "statusCode": 400,
+                            "message": "Email already registered",
+                            "errorCode": "EMAIL_TAKEN",
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }
+                    )
+                # Non-admin: delete stale record and proceed with fresh signup
+                await self.db_auth.delete_user_and_data(user.email)
             
             # Check if this is admin account signup
             is_admin = email_validator.is_admin_email(user.email)

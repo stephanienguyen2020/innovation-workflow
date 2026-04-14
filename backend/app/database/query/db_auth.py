@@ -9,6 +9,30 @@ class DBAuth:
         self.db = db
         self.collection = db.collection("users")
 
+    async def delete_user_and_data(self, email: str) -> bool:
+        """Delete a user by email and all their associated data (projects, files, RAG docs, images)"""
+        async def _delete():
+            docs = await self.collection.where(filter=FieldFilter("email", "==", email)).limit(1).get()
+            if not docs:
+                return False
+
+            user_id = docs[0].id
+
+            # Delete associated data
+            for collection_name in ["projects", "uploaded_files", "rag_documents", "images"]:
+                query = self.db.collection(collection_name).where(
+                    filter=FieldFilter("user_id", "==", user_id)
+                )
+                related_docs = await query.get()
+                for doc in related_docs:
+                    await doc.reference.delete()
+
+            # Delete the user document
+            await docs[0].reference.delete()
+            return True
+
+        return await self._execute(_delete)
+
     async def _execute(self, operation, *args, **kwargs):
         try:
             return await operation(*args, **kwargs)
