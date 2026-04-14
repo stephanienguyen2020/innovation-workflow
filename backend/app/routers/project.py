@@ -213,6 +213,18 @@ async def generate_product_ideas(
     )
 
 
+@router.post("/{project_id}/stages/4/ai-prediction")
+async def get_ai_prediction(
+    request: Request,
+    project_id: str = Path(..., description="Project ID"),
+    user: UserProfile = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db),
+) -> Dict:
+    """Stage 4: AI prediction of which solution would be most selected by a sample of 1000 people."""
+    model_id = request.headers.get("X-Model-Type")
+    return await project_service.get_ai_prediction(db, project_id, user.id, model_id=model_id)
+
+
 # =====================================================================
 # Stage 5: Evaluate (user feedback)
 # =====================================================================

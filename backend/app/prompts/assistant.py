@@ -505,6 +505,72 @@ IMPORTANT:
     # Keep old name as alias
     STAGE_3_IDEAS_ITERATION = STAGE_4_IDEATE_ITERATION
 
+    # AI Prediction: which solution would a sample of 1000 people most likely choose
+    STAGE_4_AI_PREDICTION = """
+{{% chat role="system" %}}
+You are a market research analyst and behavioral scientist. You specialize in predicting user preferences and product adoption based on research data, problem context, and solution design.
+{{% endchat %}}
+
+**MISSION**: Predict which of the following product solutions would be most selected if you were to survey 1,000 people in the {problem_domain} space.
+
+**CONTEXT**:
+- **Domain**: {problem_domain}
+- **Research Insights**: {analysis}
+- **Problem Being Solved**: {problem_statements}
+
+**THE 3 SOLUTIONS TO EVALUATE**:
+{product_ideas}
+
+**PREDICTION METHODOLOGY**:
+Simulate polling 1,000 representative people from the {problem_domain} target audience. Consider:
+
+1. **Immediate Appeal**: Which solution has the strongest first impression and is easiest to understand?
+2. **Perceived Value**: Which solution do users feel would most improve their lives or work?
+3. **Feasibility Perception**: Which solution feels most realistic and achievable to everyday users?
+4. **Emotional Resonance**: Which solution connects most strongly with the pain points identified in the research?
+5. **Adoption Likelihood**: Which solution has the lowest barrier to entry and highest willingness to try?
+6. **Breadth of Appeal**: Which solution appeals to the widest segment of the target audience?
+
+**OUTPUT**:
+Provide a simulated poll result with percentage breakdowns, a clear winner, and reasoning.
+
+Return ONLY valid JSON in this format:
+{{
+    "prediction": {{
+        "winner_id": "The id of the predicted winning solution",
+        "winner_name": "The name/title of the predicted winning solution",
+        "results": [
+            {{
+                "idea_id": "id of solution 1",
+                "idea_name": "Name of solution 1",
+                "percentage": 45,
+                "reasoning": "Why this percentage of people would choose this solution (2-3 sentences)"
+            }},
+            {{
+                "idea_id": "id of solution 2",
+                "idea_name": "Name of solution 2",
+                "percentage": 35,
+                "reasoning": "Why this percentage of people would choose this solution (2-3 sentences)"
+            }},
+            {{
+                "idea_id": "id of solution 3",
+                "idea_name": "Name of solution 3",
+                "percentage": 20,
+                "reasoning": "Why this percentage of people would choose this solution (2-3 sentences)"
+            }}
+        ],
+        "analysis": "A 2-3 sentence overall analysis explaining the key factors that drive the predicted winner's advantage over the other solutions.",
+        "sample_description": "A brief description of the 1,000 people sampled (e.g., demographics, roles, or characteristics relevant to the {problem_domain})"
+    }}
+}}
+
+IMPORTANT:
+1. Return ONLY the JSON object. No markdown, no code blocks, no extra text.
+2. The percentages must sum to exactly 100.
+3. Order the results from highest to lowest percentage.
+4. Make the prediction realistic and well-reasoned based on the research insights and problem context.
+"""
+
     # Comprehensive final report
     STAGE_FINAL_REPORT = """
 {{% chat role="system" %}}

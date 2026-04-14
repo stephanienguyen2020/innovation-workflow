@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect, Suspense } from "react";
-import { ChevronDown, Rocket, Loader2, RefreshCw, FileText } from "lucide-react";
+import { ChevronDown, Rocket, Loader2, RefreshCw, FileText, Sparkles } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useModel } from "@/context/ModelContext";
 import ModelSelector from "@/components/ModelSelector";
@@ -23,6 +23,23 @@ interface ProblemStatement {
   problem: string;
   explanation: string;
   is_custom?: boolean;
+}
+
+interface PredictionResult {
+  idea_id: string;
+  idea_name: string;
+  percentage: number;
+  reasoning: string;
+}
+
+interface AIPrediction {
+  prediction: {
+    winner_id: string;
+    winner_name: string;
+    results: PredictionResult[];
+    analysis: string;
+    sample_description: string;
+  };
 }
 
 function formatDetailedExplanation(text: string): string {
@@ -72,6 +89,9 @@ function IdeateContent() {
     has_image_feedback?: boolean;
     chosen_solution?: ProductIdea;
   } | null>(null);
+  const [aiPrediction, setAiPrediction] = useState<AIPrediction | null>(null);
+  const [isPredictionLoading, setIsPredictionLoading] = useState(false);
+  const [showPrediction, setShowPrediction] = useState(false);
 
   const isRefineMode = currentIteration > 1 && (iterationFeedback?.has_solution_feedback || iterationFeedback?.has_image_feedback);
   const isImageOnlyMode = currentIteration > 1 && iterationFeedback?.has_image_feedback && !iterationFeedback?.has_solution_feedback && !iterationFeedback?.has_problem_feedback;
@@ -304,6 +324,25 @@ function IdeateContent() {
     }
   };
 
+  const handleGetPrediction = async () => {
+    if (!projectId) return;
+    setIsPredictionLoading(true);
+    setShowPrediction(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/stages/4/ai-prediction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Model-Type": model },
+      });
+      if (!response.ok) throw new Error("Failed to get AI prediction");
+      const data = await response.json();
+      setAiPrediction(data);
+    } catch {
+      setError("Failed to generate AI prediction. Please try again.");
+    } finally {
+      setIsPredictionLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen p-6 flex flex-col items-center justify-center">
@@ -514,6 +553,94 @@ function IdeateContent() {
             <p className="text-gray-500 text-lg py-4">No ideas generated yet. Try regenerating ideas.</p>
           )}
         </div>
+
+        {/* AI Prediction Section */}
+        {productIdeas.length > 0 && (
+          <div className="space-y-4 mb-10">
+            {!showPrediction ? (
+              <div className="border border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50/50">
+                <Sparkles className="w-8 h-8 text-[#001DFA] mx-auto mb-3" />
+                <p className="text-lg font-medium text-gray-800 mb-1">
+                  Want to see which solution might resonate the most?
+                </p>
+                <p className="text-sm text-gray-500 mb-4">
+                  Our AI will simulate polling 1,000 people in the <strong>{problemStatement?.problem ? "target audience" : "domain"}</strong> to predict which solution they'd choose.
+                  <br />
+                  <span className="text-xs text-gray-400 italic">Note: This is an AI-generated prediction, not a real survey.</span>
+                </p>
+                <button
+                  onClick={handleGetPrediction}
+                  className="bg-[#001DFA] text-white px-6 py-2.5 rounded-[10px] text-sm font-medium hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Reveal AI Prediction
+                </button>
+              </div>
+            ) : isPredictionLoading ? (
+              <div className="border border-gray-200 rounded-xl p-8 text-center bg-white">
+                <Loader2 className="w-8 h-8 animate-spin text-[#001DFA] mx-auto mb-3" />
+                <p className="text-lg font-medium text-gray-700">Simulating 1,000 responses...</p>
+                <p className="text-sm text-gray-400 mt-1">This may take a moment</p>
+              </div>
+            ) : aiPrediction?.prediction ? (
+              <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+                <div className="bg-gradient-to-r from-[#001DFA] to-blue-500 px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-white" />
+                    <h3 className="text-xl font-bold text-white">AI Prediction</h3>
+                  </div>
+                  <p className="text-blue-100 text-sm mt-1">
+                    If 1,000 people in the {problemStatement?.problem ? "target audience" : "domain"} were surveyed...
+                  </p>
+                </div>
+                <div className="p-6 space-y-5">
+                  {/* Sample description */}
+                  {aiPrediction.prediction.sample_description && (
+                    <p className="text-sm text-gray-500 italic">
+                      Sample: {aiPrediction.prediction.sample_description}
+                    </p>
+                  )}
+                  {/* Results bars */}
+                  <div className="space-y-4">
+                    {aiPrediction.prediction.results.map((result, idx) => {
+                      const isWinner = result.idea_id === aiPrediction.prediction.winner_id;
+                      return (
+                        <div key={result.idea_id || idx}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={`text-sm font-medium ${isWinner ? "text-[#001DFA]" : "text-gray-700"}`}>
+                              {isWinner && <span className="mr-1">&#127942;</span>}
+                              {result.idea_name}
+                            </span>
+                            <span className={`text-lg font-bold ${isWinner ? "text-[#001DFA]" : "text-gray-800"}`}>
+                              {result.percentage}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                            <div
+                              className={`h-3 rounded-full transition-all duration-700 ${isWinner ? "bg-[#001DFA]" : "bg-gray-300"}`}
+                              style={{ width: `${result.percentage}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">{result.reasoning}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Overall analysis */}
+                  {aiPrediction.prediction.analysis && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mt-4">
+                      <p className="text-sm font-medium text-blue-900 mb-1">Key Insight</p>
+                      <p className="text-sm text-blue-800">{aiPrediction.prediction.analysis}</p>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 text-center mt-3">
+                    This is an AI-generated prediction and does not represent actual survey data.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {/* Past Iterations (newest first) */}
         {pastIterations.length > 0 && (

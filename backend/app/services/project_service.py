@@ -627,6 +627,54 @@ Write the analysis as a single coherent paragraph. Do NOT use JSON formatting, m
             raise HTTPException(status_code=500, detail=f"Invalid response format from agent: {str(e)}")
 
     # =====================================================================
+    # Stage 4: AI Prediction - which solution would 1000 people choose
+    # =====================================================================
+
+    @staticmethod
+    async def get_ai_prediction(
+        db: AsyncClient,
+        project_id: str,
+        user_id: str,
+        model_id: str = None,
+    ) -> Dict:
+        """Generate an AI prediction of which solution would be most popular."""
+        project = await db_get_project(db, project_id, user_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        stage_2 = next((s for s in project.stages if s.stage_number == 2), None)
+        stage_3 = next((s for s in project.stages if s.stage_number == 3), None)
+        stage_4 = next((s for s in project.stages if s.stage_number == 4), None)
+
+        if not stage_4 or stage_4.status != StageStatus.COMPLETED:
+            raise HTTPException(status_code=400, detail="Stage 4 (Ideate) must be completed first")
+
+        analysis = stage_2.data.get("analysis", "") if stage_2 else ""
+        problem_statements = stage_3.data.get("problem_statements", []) if stage_3 else []
+        product_ideas = stage_4.data.get("product_ideas", [])
+
+        if not product_ideas:
+            raise HTTPException(status_code=400, detail="No product ideas found to evaluate")
+
+        # Format ideas for the prompt
+        ideas_text = ""
+        for i, idea in enumerate(product_ideas, 1):
+            ideas_text += f"\n**Solution {i}** (id: {idea.get('id', '')}):\n"
+            ideas_text += f"Name: {idea.get('idea', '')}\n"
+            ideas_text += f"Description: {idea.get('detailed_explanation', '')}\n"
+
+        prompt = ProjectPrompts.STAGE_4_AI_PREDICTION
+        context = {
+            "problem_domain": project.problem_domain,
+            "analysis": analysis,
+            "problem_statements": json.dumps(problem_statements),
+            "product_ideas": ideas_text,
+        }
+
+        result_json = await agent_service.generate_json(prompt, context, model_id=model_id)
+        return json.loads(result_json) if isinstance(result_json, str) else result_json
+
+    # =====================================================================
     # Stage 5: Evaluate - User feedback + chosen solution
     # =====================================================================
 
