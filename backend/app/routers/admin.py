@@ -132,17 +132,87 @@ async def remove_username(
     db: AsyncClient = Depends(get_db)
 ):
     """
-    Remove a username from the allowed list.
+    Remove a username from the allowed list and delete the associated user
+    account and all their data from the database.
     Admin only.
     """
+    # Remove from whitelist
     success = await email_validator.remove_username(username)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to remove username"
         )
-    
-    return {"message": f"Username '{username}' removed successfully", "username": username}
+
+    # Find and delete the user account matching this username (email starts with username@)
+    deleted_user = False
+    deleted_projects = 0
+    deleted_files = 0
+    deleted_rag_docs = 0
+    deleted_images = 0
+
+    users_ref = db.collection("users")
+    users_docs = await users_ref.get()
+
+    for doc in users_docs:
+        user_data = doc.to_dict()
+        user_email = user_data.get("email", "")
+        email_username = user_email.split("@")[0].lower() if "@" in user_email else ""
+
+        if email_username == username.lower():
+            user_id = doc.id
+
+            # Delete user's projects
+            projects_query = db.collection("projects").where(
+                filter=FieldFilter("user_id", "==", user_id)
+            )
+            project_docs = await projects_query.get()
+            for project_doc in project_docs:
+                await project_doc.reference.delete()
+                deleted_projects += 1
+
+            # Delete user's uploaded files
+            files_query = db.collection("uploaded_files").where(
+                filter=FieldFilter("user_id", "==", user_id)
+            )
+            file_docs = await files_query.get()
+            for file_doc in file_docs:
+                await file_doc.reference.delete()
+                deleted_files += 1
+
+            # Delete user's RAG documents
+            rag_query = db.collection("rag_documents").where(
+                filter=FieldFilter("user_id", "==", user_id)
+            )
+            rag_docs = await rag_query.get()
+            for rag_doc in rag_docs:
+                await rag_doc.reference.delete()
+                deleted_rag_docs += 1
+
+            # Delete user's images
+            images_query = db.collection("images").where(
+                filter=FieldFilter("user_id", "==", user_id)
+            )
+            image_docs = await images_query.get()
+            for image_doc in image_docs:
+                await image_doc.reference.delete()
+                deleted_images += 1
+
+            # Delete the user document itself
+            await doc.reference.delete()
+            deleted_user = True
+            break
+
+    message = f"Username '{username}' removed from whitelist"
+    if deleted_user:
+        message += f". User account and data deleted ({deleted_projects} projects, {deleted_files} files, {deleted_rag_docs} RAG docs, {deleted_images} images)"
+
+    return {
+        "message": message,
+        "username": username,
+        "user_deleted": deleted_user,
+        "deleted_projects": deleted_projects,
+    }
 
 
 @router.get("/allowed-emails/domains", response_model=List[str])
