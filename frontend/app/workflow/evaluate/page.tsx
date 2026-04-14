@@ -344,7 +344,7 @@ function EvaluateContent() {
             <textarea
               value={problemNotes}
               onChange={(e) => setProblemNotes(e.target.value)}
-              placeholder="Any feedback on the problem statement or framing..."
+              placeholder="Note: Feedback provided for the solution will be used to refine the chosen solution. New problems generated will be similar to previous problems created. If you want to reimagine the problem, it's best to start a new workflow."
               className="w-full h-28 p-4 border rounded-lg resize-none"
             />
           </div>
